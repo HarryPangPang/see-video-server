@@ -70,6 +70,7 @@ export const getDb = async () => {
             generate_id TEXT,
             is_generated TEXT,
             video_url TEXT,
+            cover_url TEXT,
             video_thumbnail TEXT,
             video_duration TEXT,
             video_size TEXT,
@@ -84,28 +85,5 @@ export const getDb = async () => {
     `);
 
     // 数据库迁移：添加新字段
-    try {
-        // 检查 video_local_path 字段是否存在
-        const tableInfo = await dbInstance.all('PRAGMA table_info(video_generations)');
-        const hasVideoLocalPath = tableInfo.some(col => col.name === 'video_local_path');
-        const hasCoverLocalPath = tableInfo.some(col => col.name === 'cover_local_path');
-
-        if (!hasVideoLocalPath) {
-            console.log('[DB Migration] Adding video_local_path column...');
-            await dbInstance.run('ALTER TABLE video_generations ADD COLUMN video_local_path TEXT');
-        }
-
-        if (!hasCoverLocalPath) {
-            console.log('[DB Migration] Adding cover_local_path column...');
-            await dbInstance.run('ALTER TABLE video_generations ADD COLUMN cover_local_path TEXT');
-        }
-
-        if (!hasVideoLocalPath || !hasCoverLocalPath) {
-            console.log('[DB Migration] Migration completed successfully');
-        }
-    } catch (migrationError) {
-        console.error('[DB Migration] Error:', migrationError.message);
-    }
-
     return dbInstance;
 };

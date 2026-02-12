@@ -189,7 +189,19 @@ export const getVideoList = async (ctx) => {
         }
 
         console.log('[VideoList] 查询用户视频列表, userId:', userId);
+        console.log('[VideoList] 转发视频列表请求到 Chrome 服务');
 
+        const res = await axios.get(`${CHROME_SERVICE_URL}/api/get_asset_list`, {
+            headers: {
+                Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
+            },
+            timeout: 60000,
+        });
+
+        if (res.data.success && res.data.data?.asset_list) {
+            console.log('[VideoList] 获取成功，视频数量:', res.data.data.asset_list.length);
+            
+        }
         const db = await getDb();
 
         // 查询当前用户的视频记录，按创建时间倒序
@@ -215,10 +227,30 @@ export const getVideoList = async (ctx) => {
             [userId]
         );
 
+        // rows和res的asset_list根据generate_id进行合并取交集
+        let filteredRows = rows;
+        if (res.data.success && res.data.data?.asset_list) {
+            // 从 Chrome 服务返回的 asset_list 中提取所有 generate_id
+            const chromeGenerateIds = new Set(
+                res.data.data.asset_list
+                    .map(asset => asset?.video?.generate_id)
+                    .filter(id => id != null)
+            );
+
+            console.log('[VideoList] Chrome 服务返回的 generate_id 数量:', chromeGenerateIds.size);
+
+            // 只保留那些 generate_id 存在于 Chrome 服务返回列表中的记录
+            filteredRows = rows.filter(row =>
+                row.generate_id && chromeGenerateIds.has(row.generate_id)
+            );
+
+            console.log('[VideoList] 交集后的视频数量:', filteredRows.length);
+        }
+
         console.log('[VideoList] 查询到视频数量:', rows.length);
 
         // 转换为前端需要的格式
-        const assetList = rows.map(row => {
+        const assetList = filteredRows.map(row => {
             // 将本地路径转换为可访问的 URL
             const localVideoUrl = row.video_local_path
                 ? `/assets/${path.basename(path.dirname(row.video_local_path))}/${path.basename(row.video_local_path)}`
@@ -241,43 +273,16 @@ export const getVideoList = async (ctx) => {
 
             // 转换为类似即梦 API 返回的格式，以兼容前端
             return {
-                id: row.generate_id || row.id,
-                type: 2, // 视频类型
-                local_video_url: localVideoUrl,
-                local_cover_url: localCoverUrl,
-                has_local_cache: !!(localVideoUrl || localCoverUrl),
-                video: {
-                    created_time: Math.floor(row.created_at / 1000), // 转换为秒
-                    generate_id: row.generate_id,
-                    item_list: [
-                        {
-                            common_attr: {
-                                cover_url: row.video_thumbnail
-                            },
-                            video: {
-                                cover_url: row.video_thumbnail,
-                                duration_info: JSON.stringify({ play_info_duration: parseInt(row.video_duration) || 0 }),
-                                transcoded_video: {
-                                    origin: {
-                                        video_url: row.video_url
-                                    }
-                                }
-                            }
-                        }
-                    ]
-                },
-                aigc_image_params: {
-                    text2video_params: {
-                        video_gen_inputs: [
-                            {
-                                prompt: promptText
-                            }
-                        ]
-                    }
-                },
-                aigc_data: {
-                    generate_id: row.generate_id
-                }
+                id: row.id,
+                duration: row.duration,
+                model: row.model,
+                ratio: row.ratio,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                video_local_path: localVideoUrl,
+                cover_local_path: localCoverUrl,
+                prompt: promptText,
+                generate_id: row.generate_id
             };
         });
 
