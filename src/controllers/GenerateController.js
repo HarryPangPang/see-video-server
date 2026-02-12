@@ -9,6 +9,13 @@ import { CHROME_SERVICE_URL, PROJECT_ROOT } from '../config/constants.js';
 
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
 
+// Chrome 服务调用缓存（30秒节流）
+const chromeServiceCache = {
+    lastCallTime: 0,
+    cachedData: null,
+    THROTTLE_TIME: 30000 // 30秒
+};
+
 /** 将 data URL 的 base64 图片写入目录，返回写入的文件名，未写入返回 null */
 async function saveDataUrlToDir(dir, dataUrl, filename) {
     if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return null;
@@ -189,18 +196,31 @@ export const getVideoList = async (ctx) => {
         }
 
         console.log('[VideoList] 查询用户视频列表, userId:', userId);
-        console.log('[VideoList] 转发视频列表请求到 Chrome 服务');
 
-        const res = await axios.get(`${CHROME_SERVICE_URL}/api/get_asset_list`, {
-            headers: {
-                Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
-            },
-            timeout: 60000,
-        });
+        // 节流逻辑：30秒内使用缓存，不重复调用 Chrome 服务
+        const now = Date.now();
+        const timeSinceLastCall = now - chromeServiceCache.lastCallTime;
+        let res;
 
-        if (res.data.success && res.data.data?.asset_list) {
-            console.log('[VideoList] 获取成功，视频数量:', res.data.data.asset_list.length);
-            
+        if (timeSinceLastCall < chromeServiceCache.THROTTLE_TIME && chromeServiceCache.cachedData) {
+            console.log('[VideoList] 使用缓存数据 (距上次调用 ' + Math.floor(timeSinceLastCall / 1000) + '秒)');
+            res = chromeServiceCache.cachedData;
+        } else {
+            console.log('[VideoList] 转发视频列表请求到 Chrome 服务');
+            res = await axios.get(`${CHROME_SERVICE_URL}/api/get_asset_list`, {
+                headers: {
+                    Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
+                },
+                timeout: 60000,
+            });
+
+            // 更新缓存
+            chromeServiceCache.lastCallTime = now;
+            chromeServiceCache.cachedData = res;
+
+            if (res.data.success && res.data.data?.asset_list) {
+                console.log('[VideoList] 获取成功，视频数量:', res.data.data.asset_list.length);
+            }
         }
         const db = await getDb();
 
