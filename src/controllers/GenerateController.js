@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import fs from 'fs/promises';
 import path from 'path';
+import send from 'koa-send';
 import { CHROME_SERVICE_URL, PROJECT_ROOT } from '../config/constants.js';
 
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
@@ -51,6 +52,15 @@ export const generate = async (ctx) => {
         const now = Date.now();
         const userId = ctx.state.user?.id ?? null;
 
+        const imagesDir = path.join(PROJECT_ROOT, '.tmp', projectId);
+        await fs.mkdir(imagesDir, { recursive: true });
+        const startSaved = startFrame ? await saveDataUrlToDir(imagesDir, startFrame, 'start') : null;
+        const endSaved = endFrame ? await saveDataUrlToDir(imagesDir, endFrame, 'end') : null;
+
+        const origin = ctx.request.origin || '';
+        const startFrameUrl = startSaved ? `${origin}/api/generations/${projectId}/frame/start` : null;
+        const endFrameUrl = endSaved ? `${origin}/api/generations/${projectId}/frame/end` : null;
+
         const db = await getDb();
         await db.run(
             `INSERT INTO video_generations (
@@ -63,12 +73,12 @@ export const generate = async (ctx) => {
                 userId,
                 creationType,
                 duration,
-                endFrame || null,
+                endFrameUrl,
                 frameMode,
                 model,
                 prompt || null,
                 ratio,
-                startFrame || null,
+                startFrameUrl,
                 null,
                 'pending',
                 now,
@@ -76,24 +86,18 @@ export const generate = async (ctx) => {
             ]
         );
 
-        const imagesDir = path.join(PROJECT_ROOT, '.tmp', projectId);
-        await fs.mkdir(imagesDir, { recursive: true });
-        const startSaved = startFrame ? await saveDataUrlToDir(imagesDir, startFrame, 'start') : null;
-        const endSaved = endFrame ? await saveDataUrlToDir(imagesDir, endFrame, 'end') : null;
-
         const payload = {
             projectId,
             creationType,
             duration,
-            endFrame: endFrame || null,
-            endFramePath: endSaved ? path.join(imagesDir, endSaved) : null,
-            startFramePath: startSaved ? path.join(imagesDir, startSaved) : null,
             frameMode,
             model,
             prompt: prompt || null,
             ratio,
-            startFrame: startFrame || null,
-            imagesDir,
+            startFrameUrl: startFrameUrl || null,
+            endFrameUrl: endFrameUrl || null,
+            startFramePath: startSaved ? path.join(imagesDir, startSaved) : null,
+            endFramePath: endSaved ? path.join(imagesDir, endSaved) : null,
         };
 
         try {
@@ -139,4 +143,30 @@ export const generate = async (ctx) => {
             message: err.message || 'Generate failed',
         };
     }
+};
+
+/**
+ * GET /api/generations/:id/frame/:which
+ * 返回某次生成的首帧/尾帧图片（which = start | end），用于 DB 里存的 start_frame/end_frame 地址
+ */
+export const serveFrame = async (ctx) => {
+    const { id: projectId, which } = ctx.params;
+    if (!projectId || !['start', 'end'].includes(which)) {
+        ctx.status = 400;
+        return;
+    }
+    const dir = path.join(PROJECT_ROOT, '.tmp', projectId);
+    let filename;
+    try {
+        const names = await fs.readdir(dir);
+        filename = names.find((n) => n.startsWith(which + '.'));
+    } catch (e) {
+        ctx.status = 404;
+        return;
+    }
+    if (!filename) {
+        ctx.status = 404;
+        return;
+    }
+    await send(ctx, filename, { root: dir });
 };

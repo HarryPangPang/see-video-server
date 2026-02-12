@@ -2,7 +2,7 @@ import Router from 'koa-router';
 import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
-import { generate } from '../controllers/GenerateController.js';
+import { generate, serveFrame } from '../controllers/GenerateController.js';
 
 const router = new Router();
 
@@ -30,5 +30,7 @@ router.post('/api/projects', AuthController.authenticate, ProjectController.crea
 // 视频生成：接收参数 -> 落库 -> 转发 chrome 并打开即梦页面（可选带 token 以记录 user_id）
 router.post('/api/generate', AuthController.authenticate, generate);
 
+// 首帧/尾帧图片地址：供 DB 中 start_frame/end_frame 的 URL 访问
+router.get('/api/generations/:id/frame/:which', serveFrame);
 
 export default router;
