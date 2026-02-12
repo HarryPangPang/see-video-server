@@ -1,15 +1,28 @@
 import { getDb } from '../db/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
-import { CHROME_SERVICE_URL } from '../config/constants.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { CHROME_SERVICE_URL, PROJECT_ROOT } from '../config/constants.js';
 
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
+
+/** 将 data URL 的 base64 图片写入目录，返回写入的文件名，未写入返回 null */
+async function saveDataUrlToDir(dir, dataUrl, filename) {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return null;
+    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!match) return null;
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+    const filePath = path.join(dir, `${filename}.${ext}`);
+    await fs.writeFile(filePath, Buffer.from(match[2], 'base64'));
+    return `${filename}.${ext}`;
+}
 
 /**
  * POST /api/generate
  * 接收前端视频生成参数：creationType, duration, endFrame, frameMode, model, prompt, ratio, startFrame
- * 用 uuid 创建 projectId，写入 video_generations 表（generate_id 先空），
- * 再将参数转发给 see-video-chrome 的 /api/generate，由 chrome 打开即梦页面
+ * 若有图片则保存到 .tmp/projectId，用 uuid 创建 projectId，写入 video_generations 表（generate_id 先空），
+ * 再将参数与本地图片目录路径转发给 see-video-chrome 的 /api/generate，由 chrome 打开即梦页面
  */
 export const generate = async (ctx) => {
     try {
@@ -63,16 +76,24 @@ export const generate = async (ctx) => {
             ]
         );
 
+        const imagesDir = path.join(PROJECT_ROOT, '.tmp', projectId);
+        await fs.mkdir(imagesDir, { recursive: true });
+        const startSaved = startFrame ? await saveDataUrlToDir(imagesDir, startFrame, 'start') : null;
+        const endSaved = endFrame ? await saveDataUrlToDir(imagesDir, endFrame, 'end') : null;
+
         const payload = {
             projectId,
             creationType,
             duration,
             endFrame: endFrame || null,
+            endFramePath: endSaved ? path.join(imagesDir, endSaved) : null,
+            startFramePath: startSaved ? path.join(imagesDir, startSaved) : null,
             frameMode,
             model,
             prompt: prompt || null,
             ratio,
             startFrame: startFrame || null,
+            imagesDir,
         };
 
         try {
