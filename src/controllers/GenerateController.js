@@ -102,13 +102,22 @@ export const generate = async (ctx) => {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
                 },
-                timeout: 15000,
+                timeout: 45000,
             });
+            const generateId = res.data?.generateId || null;
             console.log('[Generate] Chrome service response:', res.data);
+            if (generateId) {
+                await db.run(
+                    'UPDATE video_generations SET generate_id = ?, updated_at = ? WHERE id = ?',
+                    [generateId, Date.now(), projectId]
+                );
+                console.log('[Generate] 已写入 generate_id:', generateId);
+            }
             ctx.body = {
                 success: true,
                 data: {
                     projectId,
+                    generateId: generateId || undefined,
                 },
             };
         } catch (chromeErr) {
