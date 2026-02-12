@@ -58,8 +58,36 @@ app.use(bodyParser({
     textLimit: '50mb'
 }));
 
-// Serve cover images from /covers path (PNG and SVG)
+// Serve static files from /assets path (videos and covers)
 app.use(async (ctx, next) => {
+    if (ctx.path.startsWith('/assets/')) {
+        // 从 URL 中提取路径，例如 /assets/generate_id/video.mp4 -> .tmp/generate_id/video.mp4
+        const relativePath = ctx.path.replace('/assets/', '');
+        const filePath = path.join(TMP_DIR, relativePath);
+
+        if (await fs.pathExists(filePath)) {
+            const ext = path.extname(filePath).toLowerCase();
+
+            // 设置正确的 Content-Type
+            const mimeTypes = {
+                '.mp4': 'video/mp4',
+                '.webm': 'video/webm',
+                '.mov': 'video/quicktime',
+                '.avi': 'video/x-msvideo',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.webp': 'image/webp',
+                '.svg': 'image/svg+xml',
+            };
+
+            ctx.type = mimeTypes[ext] || 'application/octet-stream';
+            ctx.body = fs.createReadStream(filePath);
+            return;
+        }
+    }
+
+    // 兼容旧的 /covers/ 路径
     if (ctx.path.includes('/covers/')) {
         if (ctx.path.endsWith('.png')) {
             const coverPath = path.join(TMP_DIR, ctx.path);

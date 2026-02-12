@@ -2,7 +2,7 @@ import Router from 'koa-router';
 import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
-import { generate, serveFrame, getVideoList } from '../controllers/GenerateController.js';
+import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths } from '../controllers/GenerateController.js';
 
 const router = new Router();
 
@@ -35,5 +35,9 @@ router.get('/api/generations/:id/frame/:which', serveFrame);
 
 // 获取视频列表：转发到 Chrome 服务获取即梦视频列表
 router.get('/api/video-list', AuthController.authenticate, getVideoList);
+
+// 视频生成资源管理：用于 Chrome 服务检查和保存视频本地路径
+router.post('/api/video-generations/check', checkVideoGeneration);
+router.post('/api/video-generations/update-paths', updateVideoPaths);
 
 export default router;

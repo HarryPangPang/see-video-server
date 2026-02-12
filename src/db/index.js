@@ -73,6 +73,8 @@ export const getDb = async () => {
             video_thumbnail TEXT,
             video_duration TEXT,
             video_size TEXT,
+            video_local_path TEXT,
+            cover_local_path TEXT,
             status TEXT DEFAULT 'pending',
             created_at INTEGER NOT NULL,
             updated_at INTEGER,
