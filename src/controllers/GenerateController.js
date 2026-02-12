@@ -173,99 +173,127 @@ export const serveFrame = async (ctx) => {
 
 /**
  * GET /api/video-list
- * 转发请求到 see-video-chrome 获取即梦视频列表，并注入本地路径信息
+ * 从数据库获取当前用户的视频列表
  */
 export const getVideoList = async (ctx) => {
     try {
-        console.log('[VideoList] 转发视频列表请求到 Chrome 服务');
+        const userId = ctx.state.user?.id;
 
-        const res = await axios.get(`${CHROME_SERVICE_URL}/api/get_asset_list`, {
-            headers: {
-                Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
-            },
-            timeout: 60000,
-        });
-
-        if (res.data.success && res.data.data?.asset_list) {
-            console.log('[VideoList] 获取成功，视频数量:', res.data.data.asset_list.length);
-
-            // 查询数据库中的本地路径信息
-            const db = await getDb();
-            const assetList = res.data.data.asset_list;
-
-            // 提取所有 generate_id
-            const generateIds = assetList
-                .map(asset => asset.aigc_data?.generate_id)
-                .filter(Boolean);
-
-            // 批量查询本地路径
-            let localPathMap = new Map();
-            console.log(`[VideoList] 查询本地路径，generate_id 数量: ${generateIds.length}`);   
-            if (generateIds.length > 0) {
-                const placeholders = generateIds.map(() => '?').join(',');
-                const rows = await db.all(
-                    `SELECT generate_id, video_local_path, cover_local_path FROM video_generations WHERE generate_id IN (${placeholders})`,
-                    generateIds
-                );
-
-                rows.forEach(row => {
-                    if (row.generate_id) {
-                        localPathMap.set(row.generate_id, {
-                            video_local_path: row.video_local_path,
-                            cover_local_path: row.cover_local_path
-                        });
-                    }
-                });
-            }
-
-            // 注入本地路径信息，并转换为可访问的 URL
-            const enhancedAssetList = assetList.map(asset => {
-                const generateId = asset.aigc_data?.generate_id;
-                if (!generateId) return asset;
-
-                const localPaths = localPathMap.get(generateId);
-                if (!localPaths) return asset;
-
-                // 将本地路径转换为 URL
-                // 例如：/Users/.../see-video-server/.tmp/gen_123/video.mp4 -> /assets/gen_123/video.mp4
-                const localVideoUrl = localPaths.video_local_path
-                    ? `/assets/${path.basename(path.dirname(localPaths.video_local_path))}/${path.basename(localPaths.video_local_path)}`
-                    : null;
-
-                const localCoverUrl = localPaths.cover_local_path
-                    ? `/assets/${path.basename(path.dirname(localPaths.cover_local_path))}/${path.basename(localPaths.cover_local_path)}`
-                    : null;
-
-                // 注入到返回数据中
-                return {
-                    ...asset,
-                    local_video_url: localVideoUrl,
-                    local_cover_url: localCoverUrl,
-                    has_local_cache: !!(localVideoUrl || localCoverUrl)
-                };
-            });
-
-            ctx.body = {
-                ...res.data,
-                data: {
-                    ...res.data.data,
-                    asset_list: enhancedAssetList
-                }
-            };
-        } else {
-            console.warn('[VideoList] Chrome 服务返回失败');
-            ctx.status = 500;
+        if (!userId) {
+            ctx.status = 401;
             ctx.body = {
                 success: false,
-                message: res.data.error || '获取视频列表失败',
+                message: 'Unauthorized'
             };
+            return;
         }
+
+        console.log('[VideoList] 查询用户视频列表, userId:', userId);
+
+        const db = await getDb();
+
+        // 查询当前用户的视频记录，按创建时间倒序
+        const rows = await db.all(
+            `SELECT
+                id,
+                generate_id,
+                video_url,
+                video_local_path,
+                video_thumbnail,
+                cover_local_path,
+                video_duration,
+                prompt,
+                model,
+                ratio,
+                duration,
+                status,
+                created_at,
+                updated_at
+            FROM video_generations
+            WHERE user_id = ? OR (user_id IS NULL AND generate_id IS NOT NULL)
+            ORDER BY created_at DESC`,
+            [userId]
+        );
+
+        console.log('[VideoList] 查询到视频数量:', rows.length);
+
+        // 转换为前端需要的格式
+        const assetList = rows.map(row => {
+            // 将本地路径转换为可访问的 URL
+            const localVideoUrl = row.video_local_path
+                ? `/assets/${path.basename(path.dirname(row.video_local_path))}/${path.basename(row.video_local_path)}`
+                : null;
+
+            const localCoverUrl = row.cover_local_path
+                ? `/assets/${path.basename(path.dirname(row.cover_local_path))}/${path.basename(row.cover_local_path)}`
+                : null;
+
+            // 解析 prompt（如果是 JSON 字符串）
+            let promptText = '';
+            try {
+                if (row.prompt) {
+                    const parsed = JSON.parse(row.prompt);
+                    promptText = Array.isArray(parsed) ? parsed.join(' ') : parsed;
+                }
+            } catch {
+                promptText = row.prompt || '';
+            }
+
+            // 转换为类似即梦 API 返回的格式，以兼容前端
+            return {
+                id: row.generate_id || row.id,
+                type: 2, // 视频类型
+                local_video_url: localVideoUrl,
+                local_cover_url: localCoverUrl,
+                has_local_cache: !!(localVideoUrl || localCoverUrl),
+                video: {
+                    created_time: Math.floor(row.created_at / 1000), // 转换为秒
+                    generate_id: row.generate_id,
+                    item_list: [
+                        {
+                            common_attr: {
+                                cover_url: row.video_thumbnail
+                            },
+                            video: {
+                                cover_url: row.video_thumbnail,
+                                duration_info: JSON.stringify({ play_info_duration: parseInt(row.video_duration) || 0 }),
+                                transcoded_video: {
+                                    origin: {
+                                        video_url: row.video_url
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                aigc_image_params: {
+                    text2video_params: {
+                        video_gen_inputs: [
+                            {
+                                prompt: promptText
+                            }
+                        ]
+                    }
+                },
+                aigc_data: {
+                    generate_id: row.generate_id
+                }
+            };
+        });
+
+        ctx.body = {
+            success: true,
+            data: {
+                asset_list: assetList,
+                has_more: false
+            }
+        };
     } catch (err) {
         console.error('[VideoList] Error:', err.message);
-        ctx.status = 502;
+        ctx.status = 500;
         ctx.body = {
             success: false,
-            message: 'Chrome service unavailable or error',
+            message: 'Failed to fetch video list',
             error: err.message,
         };
     }
