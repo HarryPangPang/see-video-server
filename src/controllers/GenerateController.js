@@ -13,7 +13,7 @@ const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
 const chromeServiceCache = {
     lastCallTime: 0,
     cachedData: null,
-    THROTTLE_TIME: 30000 // 30秒
+    THROTTLE_TIME: 30000 * 2// 30秒
 };
 
 /** 将 data URL 的 base64 图片写入目录，返回写入的文件名，未写入返回 null */
