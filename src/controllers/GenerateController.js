@@ -57,9 +57,8 @@ export const generate = async (ctx) => {
         const startSaved = startFrame ? await saveDataUrlToDir(imagesDir, startFrame, 'start') : null;
         const endSaved = endFrame ? await saveDataUrlToDir(imagesDir, endFrame, 'end') : null;
 
-        const origin = ctx.request.origin || '';
-        const startFrameUrl = startSaved ? `${origin}/api/generations/${projectId}/frame/start` : null;
-        const endFrameUrl = endSaved ? `${origin}/api/generations/${projectId}/frame/end` : null;
+        const startFrameUrl = startSaved ? `/api/generations/${projectId}/frame/start` : null;
+        const endFrameUrl = endSaved ? `/api/generations/${projectId}/frame/end` : null;
 
         const db = await getDb();
         await db.run(
