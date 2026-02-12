@@ -45,6 +45,7 @@ export const generate = async (ctx) => {
             prompt,
             ratio,
             startFrame,
+            omniFrames, // 全能参考模式：1-5张图片数组
         } = body;
 
         if (!duration || !frameMode || !model || !ratio) {
@@ -62,11 +63,28 @@ export const generate = async (ctx) => {
 
         const imagesDir = path.join(PROJECT_ROOT, '.tmp', projectId);
         await fs.mkdir(imagesDir, { recursive: true });
+
+        // 处理起始帧和结束帧（startEnd 模式）
         const startSaved = startFrame ? await saveDataUrlToDir(imagesDir, startFrame, 'start') : null;
         const endSaved = endFrame ? await saveDataUrlToDir(imagesDir, endFrame, 'end') : null;
 
         const startFrameUrl = startSaved ? `/api/generations/${projectId}/frame/start` : null;
         const endFrameUrl = endSaved ? `/api/generations/${projectId}/frame/end` : null;
+
+        // 处理全能参考模式的多张图片
+        let omniFramePaths = null;
+        let omniFrameUrls = null;
+        if (omniFrames && Array.isArray(omniFrames) && omniFrames.length > 0) {
+            omniFramePaths = [];
+            omniFrameUrls = [];
+            for (let i = 0; i < omniFrames.length; i++) {
+                const saved = await saveDataUrlToDir(imagesDir, omniFrames[i], `omni-${i}`);
+                if (saved) {
+                    omniFramePaths.push(path.join(imagesDir, saved));
+                    omniFrameUrls.push(`/api/generations/${projectId}/frame/omni-${i}`);
+                }
+            }
+        }
 
         const db = await getDb();
         await db.run(
@@ -105,6 +123,8 @@ export const generate = async (ctx) => {
             endFrameUrl: endFrameUrl || null,
             startFramePath: startSaved ? path.join(imagesDir, startSaved) : null,
             endFramePath: endSaved ? path.join(imagesDir, endSaved) : null,
+            omniFrameUrls: omniFrameUrls || null,
+            omniFramePaths: omniFramePaths || null,
         };
 
         try {
@@ -114,8 +134,22 @@ export const generate = async (ctx) => {
                     Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
                 },
                 timeout: 45000,
+            }).catch(err=>{
+                throw new Error(`Chrome service request failed: ${err}`);
             });
             const generateId = res.data?.generateId || null;
+            console.log('===res',res)
+            if(!res.data?.success && res.data?.error){
+                // ctx.status = 400;
+                 ctx.body = {
+                    success: false,
+                    data: {
+                        projectId,
+                        message: res.data?.error
+                    },
+                };
+                return
+            }
             console.log('[Generate] Chrome service response:', res.data);
             if (generateId) {
                 await db.run(
@@ -136,7 +170,7 @@ export const generate = async (ctx) => {
             ctx.status = 502;
             ctx.body = {
                 success: false,
-                message: 'Chrome service unavailable or error',
+                message: chromeErr.message,
                 projectId,
             };
             return;
@@ -154,14 +188,22 @@ export const generate = async (ctx) => {
 
 /**
  * GET /api/generations/:id/frame/:which
- * 返回某次生成的首帧/尾帧图片（which = start | end），用于 DB 里存的 start_frame/end_frame 地址
+ * 返回某次生成的首帧/尾帧图片（which = start | end | omni-0 | omni-1 等）
  */
 export const serveFrame = async (ctx) => {
     const { id: projectId, which } = ctx.params;
-    if (!projectId || !['start', 'end'].includes(which)) {
+    if (!projectId) {
         ctx.status = 400;
         return;
     }
+
+    // 验证 which 参数：支持 start, end, omni-0, omni-1, ..., omni-4
+    const isValidWhich = ['start', 'end'].includes(which) || /^omni-[0-4]$/.test(which);
+    if (!isValidWhich) {
+        ctx.status = 400;
+        return;
+    }
+
     const dir = path.join(PROJECT_ROOT, '.tmp', projectId);
     let filename;
     try {
