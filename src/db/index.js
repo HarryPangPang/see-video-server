@@ -67,6 +67,7 @@ export const getDb = async () => {
             prompt TEXT,
             ratio TEXT NOT NULL,
             start_frame TEXT,
+            omni_frames TEXT,
             generate_id TEXT,
             is_generated TEXT,
             video_url TEXT,
@@ -84,6 +85,16 @@ export const getDb = async () => {
 
     `);
 
-    // 数据库迁移：添加新字段
+    // 数据库迁移：添加新字段（为已存在的表添加 omni_frames 字段）
+    try {
+        await dbInstance.run('ALTER TABLE video_generations ADD COLUMN omni_frames TEXT');
+        console.log('[DB] Added omni_frames column to video_generations table');
+    } catch (err) {
+        // 字段可能已存在，忽略错误
+        if (!err.message.includes('duplicate column name')) {
+            console.warn('[DB] Migration warning:', err.message);
+        }
+    }
+
     return dbInstance;
 };

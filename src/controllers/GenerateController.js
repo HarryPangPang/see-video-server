@@ -90,9 +90,9 @@ export const generate = async (ctx) => {
         await db.run(
             `INSERT INTO video_generations (
                 id, user_id, creation_type, duration, end_frame, frame_mode,
-                model, prompt, ratio, start_frame, generate_id, status,
+                model, prompt, ratio, start_frame, omni_frames, generate_id, status,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 projectId,
                 userId,
@@ -104,6 +104,7 @@ export const generate = async (ctx) => {
                 prompt || null,
                 ratio,
                 startFrameUrl,
+                omniFrameUrls ? JSON.stringify(omniFrameUrls) : null,
                 null,
                 'pending',
                 now,
