@@ -111,6 +111,8 @@ app.use(async (ctx, next) => {
 
 app.use(router.routes()).use(router.allowedMethods());
 
+// Serve frontend dist files
+app.use(serve(PLAYGROUND_DIST_DIR));
 
 const server = app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
