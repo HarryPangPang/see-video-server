@@ -2,7 +2,7 @@ import Router from 'koa-router';
 import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
-import { generate, serveFrame } from '../controllers/GenerateController.js';
+import { generate, serveFrame, getVideoList } from '../controllers/GenerateController.js';
 
 const router = new Router();
 
@@ -32,5 +32,8 @@ router.post('/api/generate', AuthController.authenticate, generate);
 
 // 首帧/尾帧图片地址：供 DB 中 start_frame/end_frame 的 URL 访问
 router.get('/api/generations/:id/frame/:which', serveFrame);
+
+// 获取视频列表：转发到 Chrome 服务获取即梦视频列表
+router.get('/api/video-list', AuthController.authenticate, getVideoList);
 
 export default router;

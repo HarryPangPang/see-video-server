@@ -169,3 +169,40 @@ export const serveFrame = async (ctx) => {
     }
     await send(ctx, filename, { root: dir });
 };
+
+/**
+ * GET /api/video-list
+ * 转发请求到 see-video-chrome 获取即梦视频列表
+ */
+export const getVideoList = async (ctx) => {
+    try {
+        console.log('[VideoList] 转发视频列表请求到 Chrome 服务');
+
+        const res = await axios.get(`${CHROME_SERVICE_URL}/api/get_asset_list`, {
+            headers: {
+                Authorization: `Bearer ${INTERNAL_SERVICE_TOKEN}`,
+            },
+            timeout: 60000,
+        });
+
+        if (res.data.success) {
+            console.log('[VideoList] 获取成功，视频数量:', res.data.data?.asset_list?.length || 0);
+            ctx.body = res.data;
+        } else {
+            console.warn('[VideoList] Chrome 服务返回失败');
+            ctx.status = 500;
+            ctx.body = {
+                success: false,
+                message: res.data.error || '获取视频列表失败',
+            };
+        }
+    } catch (err) {
+        console.error('[VideoList] Error:', err.message);
+        ctx.status = 502;
+        ctx.body = {
+            success: false,
+            message: 'Chrome service unavailable or error',
+            error: err.message,
+        };
+    }
+};
