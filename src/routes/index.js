@@ -3,6 +3,7 @@ import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths } from '../controllers/GenerateController.js';
+import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
 
 const router = new Router();
 
@@ -10,6 +11,9 @@ const router = new Router();
 // Auth Routes - 注册和登录无需认证
 router.post('/api/auth/register', AuthController.register);
 router.post('/api/auth/login', AuthController.login);
+
+// Payment Webhook - LemonSqueezy 回调无需认证（有签名验证）
+router.post('/api/payment/webhook', webhookHandler);
 
 
 
@@ -39,5 +43,11 @@ router.get('/api/video-list', AuthController.authenticate, getVideoList);
 // 视频生成资源管理：用于 Chrome 服务检查和保存视频本地路径
 router.post('/api/video-generations/check', checkVideoGeneration);
 router.post('/api/video-generations/update-paths', updateVideoPaths);
+
+// Payment Routes - 支付和积分管理
+router.post('/api/payment/create', AuthController.authenticate, createPayment);
+router.get('/api/payment/history', AuthController.authenticate, getPaymentHistory);
+router.get('/api/credits/balance', AuthController.authenticate, getCreditsBalance);
+router.get('/api/credits/transactions', AuthController.authenticate, getCreditsTransactions);
 
 export default router;

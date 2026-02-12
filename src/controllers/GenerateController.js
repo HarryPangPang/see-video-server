@@ -6,6 +6,7 @@ import fsSync from 'fs-extra';
 import path from 'path';
 import send from 'koa-send';
 import { CHROME_SERVICE_URL, PROJECT_ROOT } from '../config/constants.js';
+import { CreditsService } from '../services/CreditsService.js';
 
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
 
@@ -60,6 +61,45 @@ export const generate = async (ctx) => {
         const projectId = uuidv4();
         const now = Date.now();
         const userId = ctx.state.user?.id ?? null;
+
+        // 检查用户积分（需要认证）
+        if (!userId) {
+            ctx.status = 401;
+            ctx.body = {
+                success: false,
+                message: 'Unauthorized: Please login first',
+            };
+            return;
+        }
+
+        // 检查积分余额
+        const currentCredits = await CreditsService.getUserCredits(userId);
+        if (currentCredits < 1) {
+            ctx.status = 400;
+            ctx.body = {
+                success: false,
+                message: '积分不足，请先充值',
+                data: {
+                    currentCredits,
+                    requiredCredits: 1
+                }
+            };
+            return;
+        }
+
+        // 扣除积分（生成前扣费）
+        try {
+            await CreditsService.deductCredits(userId, 1, projectId, `生成视频 - ${projectId}`);
+            console.log(`[Generate] 用户 ${userId} 扣除 1 积分，剩余 ${currentCredits - 1} 积分`);
+        } catch (creditsErr) {
+            console.error('[Generate] 扣除积分失败:', creditsErr);
+            ctx.status = 400;
+            ctx.body = {
+                success: false,
+                message: creditsErr.message || '积分扣除失败',
+            };
+            return;
+        }
 
         const imagesDir = path.join(PROJECT_ROOT, '.tmp', projectId);
         await fs.mkdir(imagesDir, { recursive: true });
@@ -140,9 +180,17 @@ export const generate = async (ctx) => {
             });
             const generateId = res.data?.generateId || null;
             console.log('===res',res)
+
+            // 业务错误（图片尺寸错误等）：退还积分
             if(!res.data?.success && res.data?.error){
-                // ctx.status = 400;
-                 ctx.body = {
+                console.log(`[Generate] 生成失败，退还积分给用户 ${userId}`);
+                try {
+                    await CreditsService.refundCredits(userId, 1, projectId, `生成失败退款 - ${res.data.error}`);
+                } catch (refundErr) {
+                    console.error('[Generate] 退款失败:', refundErr);
+                }
+
+                ctx.body = {
                     success: false,
                     data: {
                         projectId,
@@ -151,6 +199,7 @@ export const generate = async (ctx) => {
                 };
                 return
             }
+
             console.log('[Generate] Chrome service response:', res.data);
             if (generateId) {
                 await db.run(
@@ -167,7 +216,15 @@ export const generate = async (ctx) => {
                 },
             };
         } catch (chromeErr) {
+            // 系统错误：退还积分
             console.error('[Generate] Chrome service error:', chromeErr.message);
+            console.log(`[Generate] 系统错误，退还积分给用户 ${userId}`);
+            try {
+                await CreditsService.refundCredits(userId, 1, projectId, `生成失败退款 - 系统错误`);
+            } catch (refundErr) {
+                console.error('[Generate] 退款失败:', refundErr);
+            }
+
             ctx.status = 502;
             ctx.body = {
                 success: false,

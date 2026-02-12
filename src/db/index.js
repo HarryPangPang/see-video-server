@@ -30,6 +30,7 @@ export const getDb = async () => {
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             username TEXT,
+            credits INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -78,21 +79,55 @@ export const getDb = async () => {
             video_local_path TEXT,
             cover_local_path TEXT,
             status TEXT DEFAULT 'pending',
+            cost_credits INTEGER DEFAULT 1,
+            refunded INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            order_id TEXT UNIQUE NOT NULL,
+            amount REAL NOT NULL,
+            credits INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending',
+            lemonsqueezy_data TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS credits_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            related_id TEXT,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
     `);
 
-    // 数据库迁移：添加新字段（为已存在的表添加 omni_frames 字段）
-    try {
-        await dbInstance.run('ALTER TABLE video_generations ADD COLUMN omni_frames TEXT');
-        console.log('[DB] Added omni_frames column to video_generations table');
-    } catch (err) {
-        // 字段可能已存在，忽略错误
-        if (!err.message.includes('duplicate column name')) {
-            console.warn('[DB] Migration warning:', err.message);
+    // 数据库迁移：添加新字段
+    const migrations = [
+        { table: 'video_generations', column: 'omni_frames', type: 'TEXT' },
+        { table: 'users', column: 'credits', type: 'INTEGER DEFAULT 0' },
+        { table: 'video_generations', column: 'cost_credits', type: 'INTEGER DEFAULT 1' },
+        { table: 'video_generations', column: 'refunded', type: 'INTEGER DEFAULT 0' },
+    ];
+
+    for (const { table, column, type } of migrations) {
+        try {
+            await dbInstance.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+            console.log(`[DB] Added ${column} column to ${table} table`);
+        } catch (err) {
+            if (!err.message.includes('duplicate column name')) {
+                console.warn(`[DB] Migration warning for ${table}.${column}:`, err.message);
+            }
         }
     }
 
