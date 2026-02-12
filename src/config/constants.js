@@ -11,3 +11,5 @@ export const PLAYGROUND_DIST_DIR = path.join(PROJECT_ROOT, 'playground-dist');
 // 自动代理项目的 codedist 目录
 export const CODEDIST_DIR = path.resolve(PROJECT_ROOT, '../google_aistudio_auto_proxy/codedist');
 export const PORT = 80;
+// see-video-chrome 服务地址，用于转发视频生成请求并打开即梦页面
+export const CHROME_SERVICE_URL = process.env.CHROME_SERVICE_URL || 'http://localhost:1234';

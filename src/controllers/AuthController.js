@@ -333,4 +333,5 @@ export class AuthController {
             ctx.body = { success: false, message: '认证令牌无效或已过期' };
         }
     }
+
 }

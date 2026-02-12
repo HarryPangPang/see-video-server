@@ -37,49 +37,6 @@ export const AppController = {
             ctx.body = { error: err.message };
         }
     },
-    async buildRecord(ctx) {
-        try {
-            const db = await getDb();
-            const records = await db.all(`
-                SELECT
-                    b.id,
-                    b.file_name,
-                    b.create_time,
-                    b.is_processed,
-                    b.cover_url,
-                    b.drive_id,
-                    b.error_message,
-                    p.user_id,
-                    u.username
-                FROM build_record b
-                INNER JOIN (
-                    SELECT file_name, MAX(create_time) as max_time
-                    FROM build_record
-                    WHERE id IS NOT NULL AND id != ""
-                    GROUP BY file_name
-                ) latest ON b.file_name = latest.file_name AND b.create_time = latest.max_time
-                LEFT JOIN projects p ON b.drive_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
-                WHERE b.id IS NOT NULL AND b.id != ""
-                ORDER BY b.create_time DESC
-            `);
 
-            ctx.body = { success: true, data: records };
-        } catch (err) {
-            console.error('[AppController] buildRecord error:', err);
-            ctx.status = 500;
-            ctx.body = { error: err.message };
-        }
-    },
-    async chatRecord(ctx) {
-        try {
-            const db = await getDb();
-            const records = await db.all('SELECT * FROM chat_record WHERE uuid IS NOT NULL AND uuid != "" ORDER BY update_time DESC, create_time DESC');
-            ctx.body = { success: true, data: records };
-        } catch (err) {
-            console.error('[AppController] chatRecord error:', err);
-            ctx.status = 500;
-            ctx.body = { error: err.message };
-        }
-    }
+
 };

@@ -56,6 +56,29 @@ export const getDb = async () => {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS video_generations (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            creation_type TEXT NOT NULL,
+            duration TEXT NOT NULL,
+            end_frame TEXT,
+            frame_mode TEXT NOT NULL,
+            model TEXT NOT NULL,
+            prompt TEXT,
+            ratio TEXT NOT NULL,
+            start_frame TEXT,
+            generate_id TEXT,
+            is_generated TEXT,
+            video_url TEXT,
+            video_thumbnail TEXT,
+            video_duration TEXT,
+            video_size TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
     `);
 
 

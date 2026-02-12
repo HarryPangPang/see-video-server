@@ -2,6 +2,7 @@ import Router from 'koa-router';
 import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
+import { generate } from '../controllers/GenerateController.js';
 
 const router = new Router();
 
@@ -22,19 +23,12 @@ router.get('/api/auth/me', AuthController.authenticate, AuthController.getCurren
 // App Routes - 应用源码存储
 router.post('/api/apps', AuthController.authenticate, AppController.save);
 router.get('/api/apps', AuthController.authenticate, AppController.get);
-router.get('/api/chatRecord', AuthController.authenticate, AppController.chatRecord);
-router.get('/api/buildRecord', AuthController.authenticate, AppController.buildRecord);
-
 
 // Project Routes - 项目管理
 router.post('/api/projects', AuthController.authenticate, ProjectController.create);
-router.post('/api/projects/save', AuthController.authenticate, ProjectController.createOrUpdate);
-router.post('/api/projects/migrate', AuthController.authenticate, ProjectController.migrate);
-router.get('/api/projects', AuthController.authenticate, ProjectController.getList);
-router.get('/api/projects/by-driveid/:driveid', AuthController.authenticate, ProjectController.getByDriveid);
-router.get('/api/projects/:id', AuthController.authenticate, ProjectController.getById);
-router.put('/api/projects/:id', AuthController.authenticate, ProjectController.update);
-router.delete('/api/projects/:id', AuthController.authenticate, ProjectController.delete);
+
+// 视频生成：接收参数 -> 落库 -> 转发 chrome 并打开即梦页面（可选带 token 以记录 user_id）
+router.post('/api/generate', AuthController.authenticate, generate);
 
 
 export default router;
