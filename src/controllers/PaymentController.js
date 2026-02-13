@@ -171,12 +171,10 @@ export const webhookHandler = async (ctx) => {
         // 处理订单创建事件
         if (meta?.event_name === 'order_created') {
             const orderStatus = data?.attributes?.status;
-            const customData = data?.attributes?.first_order_item?.product_name || '';
-
-            // 从 checkout_data.custom 中获取我们自定义的数据
-            const checkoutCustom = data?.attributes?.checkout_data?.custom || {};
-            const orderId = checkoutCustom.order_id;
-            const credits = parseInt(checkoutCustom.credits || '0', 10);
+            // 从 meta.custom_data 中获取我们自定义的数据（LemonSqueezy 将 custom 数据放在 meta 中）
+            const customData = meta?.custom_data || {};
+            const orderId = customData.order_id;
+            const credits = parseInt(customData.credits || '0', 10);
 
             console.log('[Payment] Processing order:', {
                 orderId,
@@ -210,26 +208,6 @@ export const webhookHandler = async (ctx) => {
                 return;
             }
 
-            // 从 Lemon Squeezy 获取实际支付金额进行二次验证
-            const paidAmount = data?.attributes?.total_usd ?
-                parseFloat(data.attributes.total_usd) / 100 : // Lemon Squeezy 金额单位是分
-                null;
-
-            if (paidAmount !== null && expectedAmount !== undefined) {
-                const paidAmountDiff = Math.abs(paidAmount - expectedAmount);
-                if (paidAmountDiff > 0.01) {
-                    console.error('[Payment] ⚠️  实际支付金额与预期不符:', {
-                        orderId,
-                        credits,
-                        expectedAmount,
-                        paidAmount,
-                        difference: paidAmountDiff
-                    });
-                    console.error('[Payment] ⚠️  订单可能存在异常，请人工审核');
-                    ctx.body = { success: true };
-                    return;
-                }
-            }
 
             // 只有当订单状态为 paid 时才处理
             if (orderStatus === 'paid') {
@@ -237,7 +215,7 @@ export const webhookHandler = async (ctx) => {
                 const now = Date.now();
                 await db.run(
                     `UPDATE payments SET status = ?, lemonsqueezy_data = ?, updated_at = ? WHERE order_id = ?`,
-                    ['completed', JSON.stringify(data), now, orderId]
+                    ['completed', JSON.stringify(event), now, orderId]
                 );
 
                 // 增加用户积分
