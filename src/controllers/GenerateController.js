@@ -362,25 +362,8 @@ export const getVideoList = async (ctx) => {
             [userId]
         );
 
-        // rows和res的asset_list根据generate_id进行合并取交集
-        let filteredRows = rows;
-        if (res.data.success && res.data.data?.asset_list) {
-            // 从 Chrome 服务返回的 asset_list 中提取所有 generate_id
-            const chromeGenerateIds = new Set(
-                res.data.data.asset_list
-                    .map(asset => asset?.video?.generate_id)
-                    .filter(id => id != null)
-            );
-
-            console.log('[VideoList] Chrome 服务返回的 generate_id 数量:', chromeGenerateIds.size);
-
-            // 只保留那些 generate_id 存在于 Chrome 服务返回列表中的记录
-            filteredRows = rows.filter(row =>
-                row.generate_id && chromeGenerateIds.has(row.generate_id)
-            );
-
-            console.log('[VideoList] 交集后的视频数量:', filteredRows.length);
-        }
+        // 直接使用数据库中的记录，不再与 Chrome 服务返回的列表取交集
+        const filteredRows = rows;
 
         console.log('[VideoList] 查询到视频数量:', rows.length);
 
