@@ -79,20 +79,20 @@ export const createPayment = async (ctx) => {
         }
 
         // 检查金额是否匹配（允许小数点误差）
-        const amountDiff = Math.abs(parseFloat(amount) - expectedAmount);
-        if (amountDiff > 0.01) {
-            ctx.status = 400;
-            ctx.body = {
-                success: false,
-                message: `Amount mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
-                data: {
-                    expectedAmount,
-                    receivedAmount: amount,
-                    credits
-                }
-            };
-            return;
-        }
+        // const amountDiff = Math.abs(parseFloat(amount) - expectedAmount);
+        // if (amountDiff > 0.01) {
+        //     ctx.status = 400;
+        //     ctx.body = {
+        //         success: false,
+        //         message: `Amount mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
+        //         data: {
+        //             expectedAmount,
+        //             receivedAmount: amount,
+        //             credits
+        //         }
+        //     };
+        //     return;
+        // }
 
         // 创建支付订单（使用 LemonSqueezy API）
         const orderId = `order_${Date.now()}_${userId}`;
