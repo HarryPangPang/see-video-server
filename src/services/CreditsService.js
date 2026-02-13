@@ -101,6 +101,17 @@ export class CreditsService {
         const db = await getDb();
         const now = Date.now();
 
+        // 幂等性检查：先查询是否已经退款
+        const record = await db.get(
+            'SELECT refunded FROM video_generations WHERE id = ?',
+            [relatedId]
+        );
+
+        if (record?.refunded === 1) {
+            console.log(`[Credits] 项目 ${relatedId} 已经退款过，跳过重复退款`);
+            return await this.getUserCredits(userId);
+        }
+
         await db.run('BEGIN TRANSACTION');
 
         try {
