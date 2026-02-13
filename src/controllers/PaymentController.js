@@ -10,7 +10,7 @@ const LEMONSQUEEZY_WEBHOOK_SECRET = process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '
 
 // Variant ID 映射表（根据 credits 数量映射到对应的 Variant ID）
 const VARIANT_ID_MAP = {
-    '0': process.env.LEMONSQUEEZY_VARIANT_ID_TEST || '',
+    '-1': process.env.LEMONSQUEEZY_VARIANT_ID_TEST || '',
     1: process.env.LEMONSQUEEZY_VARIANT_ID_1 || '',
     10: process.env.LEMONSQUEEZY_VARIANT_ID_10 || '',
     30: process.env.LEMONSQUEEZY_VARIANT_ID_30 || '',
@@ -20,11 +20,11 @@ const VARIANT_ID_MAP = {
 
 // 价格映射表：1 USD = 1 Credit（测试除外）
 const PRICE_MAP = {
-    '0': 0.00,    // 测试用：免费
-    1: 1.00,      // 1 积分 = 1 美元
-    10: 10.00,    // 10 积分 = 10 美元
-    30: 30.00,    // 30 积分 = 30 美元
-    50: 50.00,    // 50 积分 = 50 美元
+    '-1': '-1',    // 测试用：免费
+    1: 1,      // 1 积分 = 1 美元
+    10: 10,    // 10 积分 = 10 美元
+    30: 30,    // 30 积分 = 30 美元
+    50: 50,    // 50 积分 = 50 美元
 };
 // 初始化 LemonSqueezy SDK
 lemonSqueezySetup({
@@ -54,28 +54,29 @@ export const createPayment = async (ctx) => {
             return;
         }
 
-        // 验证 credits 是否有效（注意：0 是有效值，用于免费测试）
-        if (credits === undefined || credits === null || !VARIANT_ID_MAP[credits]) {
+        // 验证 credits 是否有效
+        if (!amount || !VARIANT_ID_MAP[amount]) {
             ctx.status = 400;
             ctx.body = {
                 success: false,
-                message: `Invalid credits value. Supported: 1, 10, 30, 50, or 0/test for testing`,
-                data: {
-                    supportedCredits: [0, 1, 10, 30, 50, 'test']
-                }
+                message: `Invalid credits value`,
             };
             return;
         }
 
         // 验证金额是否匹配积分（1 USD = 1 Credit，test 除外）
         const expectedAmount = PRICE_MAP[credits];
-        if (expectedAmount === undefined) {
+        if (!expectedAmount || String(expectedAmount) !== String(amount)) {
+            if (String(amount) === '-1' && String(expectedAmount) === '1') {
+                // 测试用例，允许 -1 金额对应 1 积分
+            } else {
             ctx.status = 400;
             ctx.body = {
                 success: false,
-                message: `No price mapping found for ${credits} credits`
+                message: `Price mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
             };
             return;
+        }
         }
 
         // 检查金额是否匹配（允许小数点误差）
@@ -98,24 +99,24 @@ export const createPayment = async (ctx) => {
         const orderId = `order_${Date.now()}_${userId}`;
         const checkoutRes = await createCheckout(
             LEMONSQUEEZY_STORE_ID,
-            VARIANT_ID_MAP[credits],
+            VARIANT_ID_MAP[amount],
             {
                 checkoutData: {
                     email: userEmail,
                     custom: {
                         user_id: String(userId),
                         order_id: orderId,
-                        credits: String(credits)
+                        credits: String(amount) === '-1' ? '1' : String(credits) //测试-1积分实际为1积分，避免金额验证问题
                     }
                 },
                 productOptions: {
                     name: `${credits} point`,
-                    description: `purchase ${credits} point`,
+                    description: `${amount} purchase ${credits} point`,
                 }
             }
         )
         const checkoutUrl = checkoutRes.data?.data?.attributes?.url;
-        console.log('[Payment] Created checkout URL:', checkoutUrl);
+        console.log('[Payment] Created checkout URL:', checkoutRes);
         // 保存订单记录
         const db = await getDb();
         const now = Date.now();
@@ -163,6 +164,7 @@ export const webhookHandler = async (ctx) => {
 
         const event = ctx.request.body;
         const { meta, data } = event;
+        console.log('===event===',JSON.stringify(event));
 
         console.log('[Payment] Webhook event:', meta?.event_name, 'Order ID:', data?.id);
 
@@ -204,21 +206,6 @@ export const webhookHandler = async (ctx) => {
 
             if (payment.status === 'completed') {
                 console.log('[Payment] Order already processed:', orderId);
-                ctx.body = { success: true };
-                return;
-            }
-
-            // 验证金额和积分是否匹配（1 USD = 1 Credit）
-            const expectedAmount = PRICE_MAP[credits];
-            if (expectedAmount !== undefined && Math.abs(parseFloat(payment.amount) - expectedAmount) > 0.01) {
-                console.error('[Payment] ⚠️  金额验证失败:', {
-                    orderId,
-                    credits,
-                    expectedAmount,
-                    storedAmount: payment.amount
-                });
-                console.error('[Payment] ⚠️  订单可能存在异常，请人工审核');
-                // 不自动处理异常订单，但返回成功避免 Lemon Squeezy 重试
                 ctx.body = { success: true };
                 return;
             }
