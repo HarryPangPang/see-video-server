@@ -61,6 +61,7 @@ export const generate = async (ctx) => {
         const projectId = uuidv4();
         const now = Date.now();
         const userId = ctx.state.user?.id ?? null;
+        let creditsDeducted = false; // 追踪积分是否已扣除
 
         // 检查用户积分（需要认证）
         if (!userId) {
@@ -90,6 +91,7 @@ export const generate = async (ctx) => {
         // 扣除积分（生成前扣费）
         try {
             await CreditsService.deductCredits(userId, 1, projectId, `生成视频 - ${projectId}`);
+            creditsDeducted = true; // 标记积分已扣除
             console.log(`[Generate] 用户 ${userId} 扣除 1 积分，剩余 ${currentCredits - 1} 积分`);
         } catch (creditsErr) {
             console.error('[Generate] 扣除积分失败:', creditsErr);
@@ -236,6 +238,18 @@ export const generate = async (ctx) => {
 
     } catch (err) {
         console.error('[Generate] Error:', err);
+
+        // 如果积分已扣除但发生了未预期错误，尝试退款
+        const userId = ctx.state.user?.id;
+        if (creditsDeducted && userId && projectId) {
+            try {
+                await CreditsService.refundCredits(userId, 1, projectId, `生成失败退款 - 系统异常`);
+                console.log(`[Generate] 未预期错误，已退还积分给用户 ${userId}`);
+            } catch (refundErr) {
+                console.error('[Generate] 退款失败:', refundErr);
+            }
+        }
+
         ctx.status = 500;
         ctx.body = {
             success: false,
