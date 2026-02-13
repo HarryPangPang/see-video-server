@@ -353,6 +353,7 @@ export const getVideoList = async (ctx) => {
                 ratio,
                 duration,
                 status,
+                error_message,
                 created_at,
                 updated_at
             FROM video_generations
@@ -416,7 +417,8 @@ export const getVideoList = async (ctx) => {
                 video_local_path: localVideoUrl,
                 cover_local_path: localCoverUrl,
                 prompt: promptText,
-                generate_id: row.generate_id
+                generate_id: row.generate_id,
+                error_message: row.error_message || null
             };
         });
 
@@ -432,8 +434,7 @@ export const getVideoList = async (ctx) => {
         ctx.status = 500;
         ctx.body = {
             success: false,
-            message: 'Failed to fetch video list',
-            error: err.message,
+            error_message: err.message || 'Failed to fetch video list',
         };
     }
 };
