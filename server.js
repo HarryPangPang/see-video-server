@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import Koa from 'koa';
 import bodyParser from 'koa-bodyparser';
 import cors from '@koa/cors';
@@ -49,6 +50,23 @@ app.use(async (ctx, next) => {
         console.log('[Auth] Internal service request authenticated from proxy');
     }
 
+    await next();
+});
+
+// Raw body middleware for webhook signature verification
+app.use(async (ctx, next) => {
+    if (ctx.path === '/api/payment/webhook') {
+        // For webhook routes, we need to preserve the raw body for signature verification
+        const chunks = [];
+        await new Promise((resolve, reject) => {
+            ctx.req.on('data', chunk => chunks.push(chunk));
+            ctx.req.on('end', () => {
+                ctx.request.rawBody = Buffer.concat(chunks).toString('utf8');
+                resolve();
+            });
+            ctx.req.on('error', reject);
+        });
+    }
     await next();
 });
 

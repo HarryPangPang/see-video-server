@@ -96,7 +96,9 @@ export const getDb = async () => {
             lemonsqueezy_data TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER,
+             create_snapshot TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
+           
         );
 
         CREATE TABLE IF NOT EXISTS credits_transactions (

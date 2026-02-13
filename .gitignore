@@ -9,3 +9,7 @@ node_modules
 database
 package-lock.json
 .cache
+# Environment variables
+.env
+.env.local
+.env.development
