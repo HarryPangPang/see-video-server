@@ -83,6 +83,7 @@ export const getDb = async () => {
             refunded INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER,
+            error_message TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
@@ -120,6 +121,7 @@ export const getDb = async () => {
         { table: 'users', column: 'credits', type: 'INTEGER DEFAULT 0' },
         { table: 'video_generations', column: 'cost_credits', type: 'INTEGER DEFAULT 1' },
         { table: 'video_generations', column: 'refunded', type: 'INTEGER DEFAULT 0' },
+        { table: 'video_generations', column: 'error_message', type: 'TEXT' },
     ];
 
     for (const { table, column, type } of migrations) {
