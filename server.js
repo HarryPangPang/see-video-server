@@ -61,15 +61,27 @@ app.use(async (ctx, next) => {
         await new Promise((resolve, reject) => {
             ctx.req.on('data', chunk => chunks.push(chunk));
             ctx.req.on('end', () => {
-                ctx.request.rawBody = Buffer.concat(chunks).toString('utf8');
+                const rawBody = Buffer.concat(chunks).toString('utf8');
+                ctx.request.rawBody = rawBody;
+                // Manually parse JSON for webhook route
+                try {
+                    ctx.request.body = JSON.parse(rawBody);
+                } catch (err) {
+                    console.error('[Webhook] Failed to parse JSON:', err);
+                    ctx.request.body = {};
+                }
                 resolve();
             });
             ctx.req.on('error', reject);
         });
+        // Skip bodyParser for webhook route
+        await next();
+        return;
     }
     await next();
 });
 
+// Body parser for all routes except webhook
 app.use(bodyParser({
     jsonLimit: '50mb',
     formLimit: '50mb',
