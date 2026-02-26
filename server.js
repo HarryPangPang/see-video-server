@@ -56,6 +56,7 @@ app.use(async (ctx, next) => {
 // Raw body middleware for webhook signature verification
 app.use(async (ctx, next) => {
     if (ctx.path === '/api/payment/webhook') {
+        console.log('===stripe webhook===', ctx.request.body);
         // For webhook routes, we need to preserve the raw body for signature verification
         const chunks = [];
         await new Promise((resolve, reject) => {
