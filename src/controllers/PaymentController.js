@@ -4,14 +4,12 @@ import Stripe from 'stripe';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
-// ⚠️ 需要配置：Stripe Checkout 完成/取消后的跳转地址
 const STRIPE_SUCCESS_URL = 'https://see.lightchaser.xyz/#/payment/success';
-const STRIPE_CANCEL_URL ='https://see.lightchaser.xyz/#/payment/cancel';
+const STRIPE_CANCEL_URL = 'https://see.lightchaser.xyz/#/payment/cancel';
 
 // Stripe Price ID 映射表（根据 amount 映射到对应的 Price ID）
-// ⚠️ 需要配置：在 Stripe Dashboard → Products 中为每个套餐创建价格，填入对应 price_xxx ID
 const PRICE_ID_MAP = {
-    '-1': process.env.STRIPE_PRICE_ID_TEST || '',   // 测试用（需创建 $0 的测试价格）
+    '-1': process.env.STRIPE_PRICE_ID_TEST || '',   // 测试用（$0 价格）
     1: process.env.STRIPE_PRICE_ID_1 || '',
     10: process.env.STRIPE_PRICE_ID_10 || '',
     30: process.env.STRIPE_PRICE_ID_30 || '',
@@ -20,14 +18,15 @@ const PRICE_ID_MAP = {
 
 // 价格映射表：1 USD = 1 Credit（测试除外）
 const PRICE_MAP = {
-    '-1': '-1',    // 测试用：免费
+    '-1': '-1',
     1: 1,
     10: 10,
     30: 30,
     50: 50,
 };
-console.log('STRIPE_SECRET_KEY', STRIPE_SECRET_KEY);    
+
 const stripe = new Stripe(STRIPE_SECRET_KEY);
+
 /**
  * POST /api/payment/create
  * 创建充值订单
@@ -59,34 +58,18 @@ export const createPayment = async (ctx) => {
             if (String(amount) === '-1' && String(expectedAmount) === '1') {
                 // 测试用例，允许 -1 金额对应 1 积分
             } else {
-            ctx.status = 400;
-            ctx.body = {
-                success: false,
-                message: `Price mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
-            };
-            return;
+                ctx.status = 400;
+                ctx.body = {
+                    success: false,
+                    message: `Price mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
+                };
+                return;
+            }
         }
-        }
-
-        // 检查金额是否匹配（允许小数点误差）
-        // const amountDiff = Math.abs(parseFloat(amount) - expectedAmount);
-        // if (amountDiff > 0.01) {
-        //     ctx.status = 400;
-        //     ctx.body = {
-        //         success: false,
-        //         message: `Amount mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
-        //         data: {
-        //             expectedAmount,
-        //             receivedAmount: amount,
-        //             credits
-        //         }
-        //     };
-        //     return;
-        // }
 
         // 创建支付订单（使用 Stripe Checkout）
         const orderId = `order_${Date.now()}_${userId}`;
-        const actualCredits = String(amount) === '-1' ? '1' : String(credits); // 测试-1积分实际为1积分
+        const actualCredits = String(amount) === '-1' ? '1' : String(credits);
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
@@ -139,17 +122,21 @@ export const createPayment = async (ctx) => {
 /**
  * POST /api/payment/webhook
  * Stripe Webhook 回调
+ *
+ * 监听两种事件：
+ * - checkout.session.completed：覆盖正式付款（paid）和 $0 测试（no_payment_required）
+ * - payment_intent.succeeded：正式付款的补充保障，$0 不触发此事件
+ * 两者均调用 fulfillOrder()，内置幂等保护防止重复发积分。
  */
 export const webhookHandler = async (ctx) => {
     try {
-        console.log('===stripe webhook===');
         const signature = ctx.headers['stripe-signature'];
         const rawBody = ctx.request.rawBody || JSON.stringify(ctx.request.body);
 
         // 验证 Stripe webhook 签名
         let event;
         if (!STRIPE_WEBHOOK_SECRET) {
-            console.warn('[Payment] ⚠️  STRIPE_WEBHOOK_SECRET 未配置，跳过签名验证（生产环境不安全！）');
+            console.warn('[Payment] STRIPE_WEBHOOK_SECRET 未配置，跳过签名验证（生产环境不安全！）');
             event = JSON.parse(ctx.request.rawBody.toString('utf8'));
         } else {
             try {
@@ -164,79 +151,74 @@ export const webhookHandler = async (ctx) => {
 
         console.log('===stripe event===', event.type, event.id);
 
-        // 处理支付完成事件
-        if (event.type === 'payment_intent.succeeded') {
+        if (event.type === 'checkout.session.completed') {
             const session = event.data.object;
-            const paymentStatus = session.payment_status;
-            // 自定义数据存在 metadata 中
-            const metadata = session.metadata || {};
-            const orderId = metadata.order_id;
-            const credits = parseInt(metadata.credits || '0', 10);
+            const { payment_status, metadata = {}, id: sessionId } = session;
 
-            console.log('[Payment] Processing checkout.session.completed:', {
-                orderId,
-                credits,
-                paymentStatus,
-                stripeSessionId: session.id,
-            });
-
-            if (!orderId) {
-                console.error('[Payment] No order_id in session metadata');
-                ctx.body = { success: true };
-                return;
-            }
-
-            // 查找订单
-            const db = await getDb();
-            const payment = await db.get(
-                'SELECT * FROM payments WHERE order_id = ?',
-                [orderId]
-            );
-
-            if (!payment) {
-                console.warn('[Payment] Order not found in database:', orderId);
-                ctx.body = { success: true };
-                return;
-            }
-
-            if (payment.status === 'completed') {
-                console.log('[Payment] Order already processed:', orderId);
-                ctx.body = { success: true };
-                return;
-            }
-
-            // 只有当支付状态为 paid 时才处理
-            if (paymentStatus === 'paid') {
-                const now = Date.now();
-                await db.run(
-                    `UPDATE payments SET status = ?, lemonsqueezy_data = ?, updated_at = ? WHERE order_id = ?`,
-                    ['completed', JSON.stringify(event), now, orderId]
-                );
-
-                // 增加用户积分
-                await CreditsService.addCredits(
-                    payment.user_id,
-                    payment.credits,
-                    orderId,
-                    `充值 ${payment.amount} 元`
-                );
-
-                console.log(`[Payment] ✅ 订单 ${orderId} 处理成功，用户 ${payment.user_id} 获得 ${payment.credits} 积分`);
+            if (payment_status === 'paid' || payment_status === 'no_payment_required') {
+                // paid = 正式付款；no_payment_required = $0 测试订单
+                await fulfillOrder(metadata, event, `session:${sessionId}`);
             } else {
-                console.log(`[Payment] ⏳ 订单 ${orderId} 支付状态为 ${paymentStatus}，等待支付完成`);
+                // unpaid = 异步支付（银行转账等），等 payment_intent.succeeded
+                console.log(`[Payment] session ${sessionId} payment_status=${payment_status}，等待后续事件`);
             }
+
+        } else if (event.type === 'payment_intent.succeeded') {
+            // 正式付款的补充保障（$0 订单不会触发此事件）
+            const pi = event.data.object;
+            await fulfillOrder(pi.metadata || {}, event, `paymentIntent:${pi.id}`);
+
+        } else {
+            console.log(`[Payment] 未处理的事件类型: ${event.type}`);
         }
 
         ctx.body = { success: true };
     } catch (err) {
         console.error('[Payment] Webhook error:', err);
         ctx.status = 500;
-        ctx.body = {
-            success: false,
-            message: err.message
-        };
+        ctx.body = { success: false, message: err.message };
     }
 };
+
+/**
+ * 发放积分（checkout.session.completed 和 payment_intent.succeeded 共用）
+ * 内置幂等保护：同一订单已 completed 则跳过，防止重复发积分
+ */
+async function fulfillOrder(metadata, event, eventRef) {
+    const orderId = metadata.order_id;
+    if (!orderId) {
+        console.error(`[Payment] [${eventRef}] metadata 中没有 order_id`);
+        return;
+    }
+
+    const db = await getDb();
+    const payment = await db.get('SELECT * FROM payments WHERE order_id = ?', [orderId]);
+
+    if (!payment) {
+        console.warn(`[Payment] [${eventRef}] 订单不存在:`, orderId);
+        return;
+    }
+
+    if (payment.status === 'completed') {
+        console.log(`[Payment] [${eventRef}] 订单已处理过，跳过:`, orderId);
+        return;
+    }
+
+    const now = Date.now();
+    await db.run(
+        `UPDATE payments SET status = ?, lemonsqueezy_data = ?, updated_at = ? WHERE order_id = ?`,
+        ['completed', JSON.stringify(event), now, orderId]
+    );
+
+    await CreditsService.addCredits(
+        payment.user_id,
+        payment.credits,
+        orderId,
+        `充值 ${payment.amount} 元`
+    );
+
+    console.log(`[Payment] [${eventRef}] 订单 ${orderId} 处理成功，用户 ${payment.user_id} 获得 ${payment.credits} 积分`);
+}
 
 /**
  * GET /api/payment/history
@@ -335,4 +317,3 @@ export const getCreditsTransactions = async (ctx) => {
         };
     }
 };
-
