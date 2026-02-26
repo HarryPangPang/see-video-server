@@ -1,44 +1,33 @@
 import { getDb } from '../db/index.js';
 import { CreditsService } from '../services/CreditsService.js';
-import crypto from 'crypto';
-import { lemonSqueezySetup, createCheckout,getAuthenticatedUser } from '@lemonsqueezy/lemonsqueezy.js';
+import Stripe from 'stripe';
 
-// LemonSqueezy 配置（需要在环境变量中设置）
-const LEMONSQUEEZY_API_KEY = process.env.LEMONSQUEEZY_API_KEY || '';
-const LEMONSQUEEZY_STORE_ID = process.env.LEMONSQUEEZY_STORE_ID || '';
-const LEMONSQUEEZY_WEBHOOK_SECRET = process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+// ⚠️ 需要配置：Stripe Checkout 完成/取消后的跳转地址
+const STRIPE_SUCCESS_URL = 'https://see.lightchaser.xyz/payment/success';
+const STRIPE_CANCEL_URL ='https://see.lightchaser.xyz/payment/cancel';
 
-// Variant ID 映射表（根据 credits 数量映射到对应的 Variant ID）
-const VARIANT_ID_MAP = {
-    '-1': process.env.LEMONSQUEEZY_VARIANT_ID_TEST || '',
-    1: process.env.LEMONSQUEEZY_VARIANT_ID_1 || '',
-    10: process.env.LEMONSQUEEZY_VARIANT_ID_10 || '',
-    30: process.env.LEMONSQUEEZY_VARIANT_ID_30 || '',
-    50: process.env.LEMONSQUEEZY_VARIANT_ID_50 || '',
-
+// Stripe Price ID 映射表（根据 amount 映射到对应的 Price ID）
+// ⚠️ 需要配置：在 Stripe Dashboard → Products 中为每个套餐创建价格，填入对应 price_xxx ID
+const PRICE_ID_MAP = {
+    '-1': process.env.STRIPE_PRICE_ID_TEST || '',   // 测试用（需创建 $0 的测试价格）
+    1: process.env.STRIPE_PRICE_ID_1 || '',
+    10: process.env.STRIPE_PRICE_ID_10 || '',
+    30: process.env.STRIPE_PRICE_ID_30 || '',
+    50: process.env.STRIPE_PRICE_ID_50 || '',
 };
 
 // 价格映射表：1 USD = 1 Credit（测试除外）
 const PRICE_MAP = {
     '-1': '-1',    // 测试用：免费
-    1: 1,      // 1 积分 = 1 美元
-    10: 10,    // 10 积分 = 10 美元
-    30: 30,    // 30 积分 = 30 美元
-    50: 50,    // 50 积分 = 50 美元
+    1: 1,
+    10: 10,
+    30: 30,
+    50: 50,
 };
-// 初始化 LemonSqueezy SDK
-lemonSqueezySetup({
-    apiKey: LEMONSQUEEZY_API_KEY,
-    onError: (error) => console.error("LemonSqueezy Error:", error)
-});
-
-getAuthenticatedUser().then(({data, error}) => {
-    if (error) {
-        console.log(error.message);
-    } else {
-        console.log(data);
-    }
-})
+console.log('STRIPE_SECRET_KEY', STRIPE_SECRET_KEY);    
+const stripe = new Stripe(STRIPE_SECRET_KEY);
 /**
  * POST /api/payment/create
  * 创建充值订单
@@ -55,7 +44,7 @@ export const createPayment = async (ctx) => {
         }
 
         // 验证 credits 是否有效
-        if (!amount || !VARIANT_ID_MAP[amount]) {
+        if (!amount || !PRICE_ID_MAP[amount]) {
             ctx.status = 400;
             ctx.body = {
                 success: false,
@@ -95,35 +84,37 @@ export const createPayment = async (ctx) => {
         //     return;
         // }
 
-        // 创建支付订单（使用 LemonSqueezy API）
+        // 创建支付订单（使用 Stripe Checkout）
         const orderId = `order_${Date.now()}_${userId}`;
-        const checkoutRes = await createCheckout(
-            LEMONSQUEEZY_STORE_ID,
-            VARIANT_ID_MAP[amount],
-            {
-                checkoutData: {
-                    email: userEmail,
-                    custom: {
-                        user_id: String(userId),
-                        order_id: orderId,
-                        credits: String(amount) === '-1' ? '1' : String(credits) //测试-1积分实际为1积分，避免金额验证问题
-                    }
-                },
-                productOptions: {
-                    name: `${credits} point`,
-                    description: `${amount} purchase ${credits} point`,
-                }
-            }
-        )
-        const checkoutUrl = checkoutRes.data?.data?.attributes?.url;
-        console.log('[Payment] Created checkout URL:', checkoutRes);
+        const actualCredits = String(amount) === '-1' ? '1' : String(credits); // 测试-1积分实际为1积分
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [{
+                price: PRICE_ID_MAP[amount],
+                quantity: 1,
+            }],
+            mode: 'payment',
+            customer_email: userEmail,
+            metadata: {
+                user_id: String(userId),
+                order_id: orderId,
+                credits: actualCredits,
+            },
+            success_url: `${STRIPE_SUCCESS_URL}?order_id=${orderId}`,
+            cancel_url: STRIPE_CANCEL_URL,
+        });
+
+        const checkoutUrl = session.url;
+        console.log('[Payment] Created Stripe checkout session:', session.id, 'URL:', checkoutUrl);
+
         // 保存订单记录
         const db = await getDb();
         const now = Date.now();
         await db.run(
             `INSERT INTO payments (user_id, order_id, amount, credits, status, created_at, updated_at, create_snapshot)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, orderId, amount, credits, 'pending', now, now, JSON.stringify(checkoutRes)]
+            [userId, orderId, amount, credits, 'pending', now, now, JSON.stringify({ sessionId: session.id })]
         );
 
         ctx.body = {
@@ -147,44 +138,49 @@ export const createPayment = async (ctx) => {
 
 /**
  * POST /api/payment/webhook
- * LemonSqueezy Webhook 回调
+ * Stripe Webhook 回调
  */
 export const webhookHandler = async (ctx) => {
     try {
-        const signature = ctx.headers['x-signature'];
+        const signature = ctx.headers['stripe-signature'];
         const rawBody = ctx.request.rawBody || JSON.stringify(ctx.request.body);
 
-        // 验证 webhook 签名
-        if (!verifyWebhookSignature(rawBody, signature)) {
-            console.error('[Payment] Invalid webhook signature');
-            ctx.status = 401;
-            ctx.body = { success: false, message: 'Invalid signature' };
-            return;
+        // 验证 Stripe webhook 签名
+        let event;
+        if (!STRIPE_WEBHOOK_SECRET) {
+            console.warn('[Payment] ⚠️  STRIPE_WEBHOOK_SECRET 未配置，跳过签名验证（生产环境不安全！）');
+            event = ctx.request.body;
+        } else {
+            try {
+                event = stripe.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);
+            } catch (err) {
+                console.error('[Payment] Stripe webhook 签名验证失败:', err.message);
+                ctx.status = 401;
+                ctx.body = { success: false, message: 'Invalid signature' };
+                return;
+            }
         }
 
-        const event = ctx.request.body;
-        const { meta, data } = event;
-        console.log('===event===',JSON.stringify(event));
+        console.log('===stripe event===', event.type, event.id);
 
-        console.log('[Payment] Webhook event:', meta?.event_name, 'Order ID:', data?.id);
+        // 处理支付完成事件
+        if (event.type === 'payment_intent.succeeded') {
+            const session = event.data.object;
+            const paymentStatus = session.payment_status;
+            // 自定义数据存在 metadata 中
+            const metadata = session.metadata || {};
+            const orderId = metadata.order_id;
+            const credits = parseInt(metadata.credits || '0', 10);
 
-        // 处理订单创建事件
-        if (meta?.event_name === 'order_created') {
-            const orderStatus = data?.attributes?.status;
-            // 从 meta.custom_data 中获取我们自定义的数据（LemonSqueezy 将 custom 数据放在 meta 中）
-            const customData = meta?.custom_data || {};
-            const orderId = customData.order_id;
-            const credits = parseInt(customData.credits || '0', 10);
-
-            console.log('[Payment] Processing order:', {
+            console.log('[Payment] Processing checkout.session.completed:', {
                 orderId,
                 credits,
-                status: orderStatus,
-                lemonSqueezyOrderId: data?.id
+                paymentStatus,
+                stripeSessionId: session.id,
             });
 
             if (!orderId) {
-                console.error('[Payment] No order_id in custom data');
+                console.error('[Payment] No order_id in session metadata');
                 ctx.body = { success: true };
                 return;
             }
@@ -208,10 +204,8 @@ export const webhookHandler = async (ctx) => {
                 return;
             }
 
-
-            // 只有当订单状态为 paid 时才处理
-            if (orderStatus === 'paid') {
-                // 更新订单状态
+            // 只有当支付状态为 paid 时才处理
+            if (paymentStatus === 'paid') {
                 const now = Date.now();
                 await db.run(
                     `UPDATE payments SET status = ?, lemonsqueezy_data = ?, updated_at = ? WHERE order_id = ?`,
@@ -228,7 +222,7 @@ export const webhookHandler = async (ctx) => {
 
                 console.log(`[Payment] ✅ 订单 ${orderId} 处理成功，用户 ${payment.user_id} 获得 ${payment.credits} 积分`);
             } else {
-                console.log(`[Payment] ⏳ 订单 ${orderId} 状态为 ${orderStatus}，等待支付完成`);
+                console.log(`[Payment] ⏳ 订单 ${orderId} 支付状态为 ${paymentStatus}，等待支付完成`);
             }
         }
 
@@ -341,98 +335,3 @@ export const getCreditsTransactions = async (ctx) => {
     }
 };
 
-// ========== 辅助函数 ==========
-
-/**
- * 创建 LemonSqueezy 支付链接
- */
-async function createLemonSqueezyCheckout({ userId, orderId, amount, credits }) {
-    // 根据 credits 数量获取对应的 Variant ID
-    const variantId = VARIANT_ID_MAP[credits];
-
-    if (!variantId) {
-        throw new Error(`不支持的充值金额：${credits} 积分。可选：1, 30, 50`);
-    }
-
-    if (!LEMONSQUEEZY_STORE_ID) {
-        throw new Error('LemonSqueezy Store ID 未配置');
-    }
-
-    try {
-        // 使用 LemonSqueezy SDK 创建 Checkout
-        const checkout = await createCheckout(
-            LEMONSQUEEZY_STORE_ID,
-            variantId,
-            {
-                checkoutData: {
-                    custom: {
-                        user_id: String(userId),
-                        order_id: orderId,
-                        credits: String(credits)
-                    }
-                },
-                productOptions: {
-                    name: `${credits} 积分`,
-                    description: `购买 ${credits} 个视频生成积分`,
-                }
-            }
-        );
-
-        // 检查响应
-        if (checkout.error) {
-            console.error('[Payment] LemonSqueezy API error:', checkout.error);
-            throw new Error(checkout.error.message || 'Failed to create checkout');
-        }
-
-        if (!checkout.data?.attributes?.url) {
-            console.error('[Payment] Invalid checkout response:', checkout);
-            throw new Error('无法获取支付链接');
-        }
-
-        console.log(`[Payment] Created checkout for order ${orderId}, URL: ${checkout.data.attributes.url}`);
-        return checkout.data.attributes.url;
-
-    } catch (error) {
-        console.error('[Payment] Failed to create LemonSqueezy checkout:', error);
-        throw new Error(`创建支付链接失败: ${error.message}`);
-    }
-}
-
-/**
- * 验证 Webhook 签名
- * LemonSqueezy 使用 HMAC-SHA256 签名，签名在 X-Signature header 中
- */
-function verifyWebhookSignature(payload, signature) {
-    if (!LEMONSQUEEZY_WEBHOOK_SECRET) {
-        console.warn('[Payment] ⚠️  Webhook secret not configured, skipping verification');
-        console.warn('[Payment] ⚠️  This is UNSAFE for production! Please configure LEMONSQUEEZY_WEBHOOK_SECRET');
-        return true; // 开发环境可以跳过验证
-    }
-
-    if (!signature) {
-        console.error('[Payment] No signature provided in X-Signature header');
-        return false;
-    }
-
-    try {
-        const hmac = crypto.createHmac('sha256', LEMONSQUEEZY_WEBHOOK_SECRET);
-        const digest = hmac.update(payload).digest('hex');
-
-        // LemonSqueezy 的签名格式通常是 hex 编码的
-        const isValid = crypto.timingSafeEqual(
-            Buffer.from(signature, 'hex'),
-            Buffer.from(digest, 'hex')
-        );
-
-        if (!isValid) {
-            console.error('[Payment] Signature verification failed');
-            console.error('[Payment] Expected:', digest);
-            console.error('[Payment] Received:', signature);
-        }
-
-        return isValid;
-    } catch (error) {
-        console.error('[Payment] Error verifying webhook signature:', error);
-        return false;
-    }
-}
