@@ -5,8 +5,8 @@ import Stripe from 'stripe';
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 // ⚠️ 需要配置：Stripe Checkout 完成/取消后的跳转地址
-const STRIPE_SUCCESS_URL = 'https://see.lightchaser.xyz/payment/success';
-const STRIPE_CANCEL_URL ='https://see.lightchaser.xyz/payment/cancel';
+const STRIPE_SUCCESS_URL = 'https://see.lightchaser.xyz/#/payment/success';
+const STRIPE_CANCEL_URL ='https://see.lightchaser.xyz/#/payment/cancel';
 
 // Stripe Price ID 映射表（根据 amount 映射到对应的 Price ID）
 // ⚠️ 需要配置：在 Stripe Dashboard → Products 中为每个套餐创建价格，填入对应 price_xxx ID
@@ -142,6 +142,7 @@ export const createPayment = async (ctx) => {
  */
 export const webhookHandler = async (ctx) => {
     try {
+        console.log('===stripe webhook===');
         const signature = ctx.headers['stripe-signature'];
         const rawBody = ctx.request.rawBody || JSON.stringify(ctx.request.body);
 
