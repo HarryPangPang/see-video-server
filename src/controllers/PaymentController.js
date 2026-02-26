@@ -150,7 +150,7 @@ export const webhookHandler = async (ctx) => {
         let event;
         if (!STRIPE_WEBHOOK_SECRET) {
             console.warn('[Payment] ⚠️  STRIPE_WEBHOOK_SECRET 未配置，跳过签名验证（生产环境不安全！）');
-            event = ctx.request.body;
+            event = JSON.parse(ctx.request.rawBody.toString('utf8'));
         } else {
             try {
                 event = stripe.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);

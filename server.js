@@ -61,15 +61,9 @@ app.use(async (ctx, next) => {
         await new Promise((resolve, reject) => {
             ctx.req.on('data', chunk => chunks.push(chunk));
             ctx.req.on('end', () => {
-                const rawBody = Buffer.concat(chunks).toString('utf8');
-                ctx.request.rawBody = rawBody;
-                // Manually parse JSON for webhook route
-                try {
-                    ctx.request.body = JSON.parse(rawBody);
-                } catch (err) {
-                    console.error('[Webhook] Failed to parse JSON:', err);
-                    ctx.request.body = {};
-                }
+                // Keep as Buffer - Stripe's constructEvent needs the raw bytes, not a parsed object
+                ctx.request.rawBody = Buffer.concat(chunks);
+                ctx.request.body = {};
                 resolve();
             });
             ctx.req.on('error', reject);
