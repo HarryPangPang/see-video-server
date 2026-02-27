@@ -7471,3 +7471,91 @@ curl 'https://jimeng.jianying.com/mweb/v1/aigc_draft/generate?aid=513695&device_
     }
 }
 ```
+
+###
+查询排队信息
+
+#### 输入
+```
+curl 'https://jimeng.jianying.com/mweb/v1/get_history_queue_info?aid=513695&web_version=7.5.0&da_version=3.3.10&aigc_features=app_lip_sync&msToken=JVfC2EIp1Hie9wyxMkeo2xzL3WVEjUrq7KnbSCn-qzlET9gF-BDojCilSqnAkNSPyl27XwQ1rGiGc4Jy_S_DyW7m_fOoHXNLXjdUGJjQyHsdXacukF7lwGXVo9-sArk%3D&a_bogus=my0EDOg2Msm18EnDMwkz97mspjy0YWRfgZENXDWR40LN' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: zh-CN,zh;q=0.9,en;q=0.8' \
+  -H 'app-sdk-version: 48.0.0' \
+  -H 'appid: 513695' \
+  -H 'appvr: 8.4.0' \
+  -H 'content-type: application/json' \
+  -b 'fpk1=360c140015312c376a69d0834df2ff2bc70fc9c489082e812ade6bfcb1d05a963a4f616c11b37eaa109e024c71b9dd38; is_staff_user=false; COOKIE_CONSENT_PROMPT_CONFIG={%22status%22:1%2C%22settings%22:{%22firstPartyAnalytics%22:true%2C%22GoogleAnalytics%22:true}%2C%22updatedTime%22:1770708820699}; passport_mfa_token=CjicrOBX%2FF%2FOGYlY4jinyx2nG3%2BdW1%2B7dx6%2FFB4512TOraf7vmh6frusWaw80ZWGqPzHvy7doE5N2BpKCjwAAAAAAAAAAAAAUA%2BwnQpeyTyE%2BGAu0nHmq1F0T4bbdxTvD%2F8h9J7EMrE7UNKEj%2F%2FWiLVxLq84y2RLBtAQ8qqJDhj2sdFsIAIiAQMu2ur9; n_mh=9-mIeuD4wZnlYrrOvfzG3MuT6aQmCUtmr8FxV8Kl8xY; sid_guard=a055d7e5d713d002f198e919bbe5bbb7%7C1770800993%7C31536000%7CThu%2C+11-Feb-2027+09%3A09%3A53+GMT; uid_tt=5f8139a3e2455dd2196e32c7afc06c53; uid_tt_ss=5f8139a3e2455dd2196e32c7afc06c53; sid_tt=a055d7e5d713d002f198e919bbe5bbb7; sessionid=a055d7e5d713d002f198e919bbe5bbb7; sessionid_ss=a055d7e5d713d002f198e919bbe5bbb7; session_tlb_tag=sttt%7C8%7CoFXX5dcT0ALxmOkZu-W7t__________Bd2X-3iHS3juMN7-OG-aygODwHNE2PbdvhlRKRhTXfZo%3D; sid_ucp_v1=1.0.0-KDI4MTNiMjk3NDE4YTZhZjkwMjE4OTU0ZDhlMjNmYWI2NDVhMDI3NmMKHwjE6PD7i63aBxDhjrHMBhifrR8gDDDSgbDMBjgIQCYaAmxxIiBhMDU1ZDdlNWQ3MTNkMDAyZjE5OGU5MTliYmU1YmJiNw; ssid_ucp_v1=1.0.0-KDI4MTNiMjk3NDE4YTZhZjkwMjE4OTU0ZDhlMjNmYWI2NDVhMDI3NmMKHwjE6PD7i63aBxDhjrHMBhifrR8gDDDSgbDMBjgIQCYaAmxxIiBhMDU1ZDdlNWQ3MTNkMDAyZjE5OGU5MTliYmU1YmJiNw; user_spaces_idc={"7605442610333025307":"lf"}; dm_auid=RxRJekglj63abjollVg26eNDO/DGIxDB0+MSpoWFQo8=; uifid_temp=f98c221717f582380e2a5a9c2ab4835a6243f0f6b183728802c4303afd62fe410064b1ef92beeadea9e295b79e9f2df27f1a1ebe9dee624af1fe2e2b2da8ec5306250871076bb75d9d4d5e99b85f0a085156259578047346ffb398a997180d4d232d40f4263db830b46062bc1c1f1646; uifid=f98c221717f582380e2a5a9c2ab4835a6243f0f6b183728802c4303afd62fe4170ee63ff8f21c28ce4b6a1602fb4772e24c37ab92d2a43483a4c35ace2198278e3158d8b05b2fb225e138faaa1575dcb27f7ebd06b0f2bd9299fc7b10ca89ce12e9fa0ddf1e0b92337b58ece6fddbf7cabe80f6b5a7770fd5ff6c6ea9752ba3c0a93ac4bd7e4aaaf11b00e1af59a37d682ee65782a1cf9178ddd4212a03fbc572dbb717e904be12996f51501cfac81dd1b5640dd2e26cf0c5e0fd3341df05e27; biz_trace_id=5c4a52a2; _v2_spipe_web_id=7606265807659909130; s_v_web_id=verify_mlohcszg_Ent5O13o_XOno_4anR_A22h_KRoAcBy7JsPy; _tea_web_id=7584089465464899081; _isHitHomeHeaderRefreshExperiment=1; DREAMINA_THEME=light; ttwid=1|EhmErRErrXfXrpwlX1QduPzrNWxQZLES0CagnAkDNIw|1772183212|b8fd718a77a96d27c77b213a010efc006f227a6dacf2703fd2e065862a054469; _uetsid=6af16e3012f711f1b313013d739caeef; _uetvid=3b536f20d9c111f0a1b1cd46966aaa1d; odin_tt=5955732110c7cfdfbaefa197657b4594fc3c05c4cdaddf14657e0db6a1062d8dec4bab9acc7b97d0b0855b9c62d0bd99b3d7fa072e57bb86e66a8433a2009bdd' \
+  -H 'device-time: 1772183429' \
+  -H 'dnt: 1' \
+  -H 'lan: zh-Hans' \
+  -H 'loc: cn' \
+  -H 'origin: https://jimeng.jianying.com' \
+  -H 'pf: 7' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://jimeng.jianying.com/ai-tool/generate?type=video' \
+  -H 'sec-ch-ua: "Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sign: 2255ff5f58795b10e17a7d880652226e' \
+  -H 'sign-ver: 1' \
+  -H 'tdid;' \
+  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36' \
+  --data-raw '{"history_ids":["14565136624396","14566456594188"]}'
+```
+#### 输出
+```
+{
+    "ret": "0",
+    "errmsg": "success",
+    "systime": "1772183429",
+    "logid": "2026022717102974AADF49FAB49EB7799C",
+    "data": {
+        "14565136624396": {
+            "status": 0,
+            "queue_info": {
+                "queue_idx": 13632,
+                "priority": 1,
+                "queue_status": 1,
+                "queue_length": 90276,
+                "polling_config": {
+                    "interval_seconds": 30,
+                    "timeout_seconds": 86400
+                },
+                "priority_queue_display_threshold": {
+                    "vip_queuing_time_threshold": 300,
+                    "waiting_time_threshold": 60
+                }
+            },
+            "forecast_cost_time": {
+                "forecast_generate_cost": 2438,
+                "forecast_queue_cost": 2617
+            }
+        },
+        "14566456594188": {
+            "status": 0,
+            "queue_info": {
+                "queue_idx": 9606,
+                "priority": 1,
+                "queue_status": 1,
+                "queue_length": 90277,
+                "polling_config": {
+                    "interval_seconds": 30,
+                    "timeout_seconds": 86400
+                },
+                "priority_queue_display_threshold": {
+                    "vip_queuing_time_threshold": 300,
+                    "waiting_time_threshold": 60
+                }
+            },
+            "forecast_cost_time": {
+                "forecast_generate_cost": 2813,
+                "forecast_queue_cost": 2540
+            }
+        }
+    }
+}
+```
+其中"queue_length": 90276, 是总共排队人数， "queue_idx": 12768,是排第几位，排7889/91171位 等28分钟，排 11899/91154等 39分钟，那么 第几位/总人数 怎么计算出等多少分钟(等待时间 = 你的排名 / 300)

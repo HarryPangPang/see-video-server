@@ -181,7 +181,6 @@ export const generate = async (ctx) => {
                 throw new Error(`Chrome service request failed: ${err}`);
             });
             const generateId = res.data?.generateId || null;
-            console.log('===res',res)
 
             // 业务错误（图片尺寸错误等）：退还积分
             if(!res.data?.success && res.data?.error){
@@ -299,7 +298,6 @@ export const serveFrame = async (ctx) => {
 export const getVideoList = async (ctx) => {
     try {
         const userId = ctx.state.user?.id;
-
         if (!userId) {
             ctx.status = 401;
             ctx.body = {
@@ -337,6 +335,32 @@ export const getVideoList = async (ctx) => {
             }
         }
         const db = await getDb();
+        // 将本次响应中的排队信息写入数据库（按 generate_id 对应 asset.id）
+        if (res?.data?.success && res.data.data?.asset_list?.length) {
+            const now = Date.now();
+            for (const asset of res.data.data.asset_list) {
+                const generateId = asset.video?.generate_id;
+                if (asset.queue_info) {
+                    try {
+                        const q = asset.queue_info.queue_info || {};
+                        const queue_idx = Number(q.queue_idx);
+                        const queue_length = Number(q.queue_length);
+                        const waiting_minutes = Number.isFinite(queue_idx) ? Math.ceil(queue_idx / 300) : null;
+                        const queueInfo = {
+                            position: Number.isFinite(queue_idx) ? queue_idx : undefined,
+                            total: Number.isFinite(queue_length) ? queue_length : undefined,
+                            waiting_minutes
+                        };
+                        await db.run(
+                            'UPDATE video_generations SET queue_info = ?, updated_at = ? WHERE generate_id = ?',
+                            [JSON.stringify(queueInfo), now, generateId]
+                        );
+                    } catch (e) {
+                        console.warn('[VideoList] 更新 queue_info 失败:', generateId, e.message);
+                    }
+                }
+            }
+        }
 
         // 查询当前用户的视频记录，按创建时间倒序
         const rows = await db.all(
@@ -354,6 +378,7 @@ export const getVideoList = async (ctx) => {
                 duration,
                 status,
                 error_message,
+                queue_info,
                 created_at,
                 updated_at
             FROM video_generations
@@ -388,7 +413,23 @@ export const getVideoList = async (ctx) => {
             } catch {
                 promptText = row.prompt || '';
             }
-
+            // 排队信息：DB 存的是 { position, total, waiting_minutes }，返回统一为 { 位置, 总人数, 等待分钟 }
+            let queueInfo = null;
+            if (row.queue_info) {
+                try {
+                    const raw = typeof row.queue_info === 'string' ? JSON.parse(row.queue_info) : row.queue_info;
+                    const pos = raw.position ?? raw.queue_info?.queue_idx;
+                    const total = raw.total ?? raw.queue_info?.queue_length;
+                    const posNum = Number(pos);
+                    const totalNum = Number(total);
+                    if (Number.isFinite(posNum) && Number.isFinite(totalNum)) {
+                        const wait = Number.isFinite(raw.waiting_minutes) ? raw.waiting_minutes : Math.ceil(posNum / 300);
+                        queueInfo = { pos: posNum, total: totalNum, wait: wait };
+                    }
+                } catch {
+                    queueInfo = null;
+                }
+            }
             // 转换为类似即梦 API 返回的格式，以兼容前端
             return {
                 id: row.id,
@@ -401,7 +442,8 @@ export const getVideoList = async (ctx) => {
                 cover_local_path: localCoverUrl,
                 prompt: promptText,
                 generate_id: row.generate_id,
-                error_message: row.error_message || null
+                error_message: row.error_message || null,
+                queue_info: queueInfo
             };
         });
 
