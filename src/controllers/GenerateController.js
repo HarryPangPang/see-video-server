@@ -362,7 +362,7 @@ export const getVideoList = async (ctx) => {
             }
         }
 
-        // 查询当前用户的视频记录，按创建时间倒序
+        // 只查询当前用户的视频记录，不展示 user_id 为 null 的给所有用户
         const rows = await db.all(
             `SELECT
                 id,
@@ -382,7 +382,7 @@ export const getVideoList = async (ctx) => {
                 created_at,
                 updated_at
             FROM video_generations
-            WHERE user_id = ? OR (user_id IS NULL AND generate_id IS NOT NULL)
+            WHERE user_id = ?
             ORDER BY created_at DESC`,
             [userId]
         );
