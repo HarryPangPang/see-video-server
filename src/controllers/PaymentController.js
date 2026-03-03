@@ -9,16 +9,16 @@ const STRIPE_CANCEL_URL = 'https://see.lightchaser.xyz/#/payment/cancel';
 
 // Stripe Price ID 映射表（根据 amount 映射到对应的 Price ID）
 const PRICE_ID_MAP = {
-    '-1': process.env.STRIPE_PRICE_ID_TEST || '',   // 测试用（$0 价格）
+    // '-1': process.env.STRIPE_PRICE_ID_TEST || '',   // 测试免费支付（已注释）
     1: process.env.STRIPE_PRICE_ID_1 || '',
     10: process.env.STRIPE_PRICE_ID_10 || '',
     30: process.env.STRIPE_PRICE_ID_30 || '',
     50: process.env.STRIPE_PRICE_ID_50 || '',
 };
 
-// 价格映射表：1 USD = 1 Credit（测试除外）
+// 价格映射表：1 USD = 1 Credit
 const PRICE_MAP = {
-    '-1': '-1',
+    // '-1': '-1',  // 测试免费支付（已注释）
     1: 1,
     10: 10,
     30: 30,
@@ -52,24 +52,21 @@ export const createPayment = async (ctx) => {
             return;
         }
 
-        // 验证金额是否匹配积分（1 USD = 1 Credit，test 除外）
+        // 验证金额是否匹配积分（1 USD = 1 Credit）
         const expectedAmount = PRICE_MAP[credits];
         if (!expectedAmount || String(expectedAmount) !== String(amount)) {
-            if (String(amount) === '-1' && String(expectedAmount) === '1') {
-                // 测试用例，允许 -1 金额对应 1 积分
-            } else {
-                ctx.status = 400;
-                ctx.body = {
-                    success: false,
-                    message: `Price mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
-                };
-                return;
-            }
+            ctx.status = 400;
+            ctx.body = {
+                success: false,
+                message: `Price mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
+            };
+            return;
         }
 
         // 创建支付订单（使用 Stripe Checkout）
         const orderId = `order_${Date.now()}_${userId}`;
-        const actualCredits = String(amount) === '-1' ? '1' : String(credits);
+        const actualCredits = String(credits);
+        // const actualCredits = String(amount) === '-1' ? '1' : String(credits);  // 测试免费支付（已注释）
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
@@ -155,9 +152,13 @@ export const webhookHandler = async (ctx) => {
             const session = event.data.object;
             const { payment_status, metadata = {}, id: sessionId } = session;
 
-            if (payment_status === 'paid' || payment_status === 'no_payment_required') {
-                // paid = 正式付款；no_payment_required = $0 测试订单
+            if (payment_status === 'paid') {
+                // paid = 正式付款
+                // no_payment_required = $0 测试订单（已注释，不再发放积分）
                 await fulfillOrder(metadata, event, `session:${sessionId}`);
+            } else if (payment_status === 'no_payment_required') {
+                // 测试免费支付：不再自动发积分（已注释逻辑）
+                console.log(`[Payment] session ${sessionId} payment_status=no_payment_required，已跳过发积分`);
             } else {
                 // unpaid = 异步支付（银行转账等），等 payment_intent.succeeded
                 console.log(`[Payment] session ${sessionId} payment_status=${payment_status}，等待后续事件`);
