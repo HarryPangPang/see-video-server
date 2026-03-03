@@ -45,6 +45,48 @@ export class UserModel {
     }
 
     /**
+     * 根据 Google ID 查找用户
+     */
+    static async findByGoogleId(googleId) {
+        if (!googleId) return null;
+        const db = await getDb();
+        return await db.get('SELECT * FROM users WHERE google_id = ?', [googleId]);
+    }
+
+    /**
+     * 使用 Google 信息创建或获取用户（用于 Google 登录）
+     */
+    static async createFromGoogle(email, googleId, name = null) {
+        const db = await getDb();
+        const now = Date.now();
+        // 占位密码（Google 用户不会用密码登录）
+        const hashedPassword = await bcrypt.hash('google-' + googleId + '-' + Math.random(), 10);
+        try {
+            const result = await db.run(
+                `INSERT INTO users (email, password, username, google_id, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [email, hashedPassword, name || null, googleId, now, now]
+            );
+            return {
+                id: result.lastID,
+                email,
+                username: name || null,
+                google_id: googleId,
+                created_at: now,
+            };
+        } catch (error) {
+            if (error.message.includes('UNIQUE constraint failed')) {
+                // 可能是 email 或 google_id 已存在，尝试按 google_id 查找
+                const existing = await UserModel.findByGoogleId(googleId);
+                if (existing) return existing;
+                const byEmail = await UserModel.findByEmail(email);
+                if (byEmail) return byEmail;
+            }
+            throw error;
+        }
+    }
+
+    /**
      * 根据 ID 查找用户
      */
     static async findById(id) {

@@ -4,6 +4,15 @@ import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths } from '../controllers/GenerateController.js';
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
+import {
+    publishFromGeneration,
+    publishFromUpload,
+    listWorks,
+    getWorkById,
+    likeWork,
+    unlikeWork,
+    addComment,
+} from '../controllers/WorksController.js';
 
 const router = new Router();
 
@@ -11,6 +20,7 @@ const router = new Router();
 // Auth Routes - 注册和登录无需认证
 router.post('/api/auth/register', AuthController.register);
 router.post('/api/auth/login', AuthController.login);
+router.post('/api/auth/google', AuthController.googleLogin);
 
 // Payment Webhook - LemonSqueezy 回调无需认证（有签名验证）
 router.post('/api/payment/webhook', webhookHandler);
@@ -49,5 +59,14 @@ router.post('/api/payment/create', AuthController.authenticate, createPayment);
 router.get('/api/payment/history', AuthController.authenticate, getPaymentHistory);
 router.get('/api/credits/balance', AuthController.authenticate, getCreditsBalance);
 router.get('/api/credits/transactions', AuthController.authenticate, getCreditsTransactions);
+
+// Works (Plaza) - 作品发布、广场、详情、点赞、评论
+router.post('/api/works', AuthController.authenticate, publishFromGeneration);
+router.post('/api/works/upload', AuthController.authenticate, publishFromUpload);
+router.get('/api/works', listWorks);
+router.get('/api/works/:id', AuthController.optionalAuthenticate, getWorkById);
+router.post('/api/works/:id/like', AuthController.authenticate, likeWork);
+router.delete('/api/works/:id/like', AuthController.authenticate, unlikeWork);
+router.post('/api/works/:id/comments', AuthController.authenticate, addComment);
 
 export default router;

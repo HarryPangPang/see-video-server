@@ -114,6 +114,39 @@ export const getDb = async () => {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS published_works (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            prompt TEXT,
+            video_url TEXT,
+            cover_url TEXT,
+            video_generation_id TEXT,
+            source TEXT NOT NULL DEFAULT 'generation',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS work_likes (
+            user_id INTEGER NOT NULL,
+            work_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, work_id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (work_id) REFERENCES published_works(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS work_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            work_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (work_id) REFERENCES published_works(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
     `);
 
     // 数据库迁移：添加新字段
@@ -124,6 +157,7 @@ export const getDb = async () => {
         { table: 'video_generations', column: 'refunded', type: 'INTEGER DEFAULT 0' },
         { table: 'video_generations', column: 'error_message', type: 'TEXT' },
         { table: 'video_generations', column: 'queue_info', type: 'TEXT' },
+        { table: 'users', column: 'google_id', type: 'TEXT' },
     ];
 
     for (const { table, column, type } of migrations) {
