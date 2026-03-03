@@ -8,12 +8,17 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * GET /api/works
- * 获取所有公开作品列表
+ * 获取公开作品列表（支持 sort/page/limit 分页）
+ * Query: sort=newest|likes|foryou, page=1, limit=20
  */
 export const getWorksList = async (ctx) => {
     try {
-        const list = await WorksModel.getList();
-        ctx.body = { success: true, data: { list } };
+        const { sort = 'newest', page = '1', limit = '20' } = ctx.query;
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+        const offset = (pageNum - 1) * limitNum;
+        const result = await WorksModel.getList({ sort, limit: limitNum, offset });
+        ctx.body = { success: true, data: result };
     } catch (err) {
         console.error('[Works] getList error:', err);
         ctx.status = 500;

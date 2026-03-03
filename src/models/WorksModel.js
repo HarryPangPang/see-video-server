@@ -18,22 +18,48 @@ export class WorksModel {
     }
 
     /**
-     * 获取所有作品列表（带作者名 + 点赞数）
+     * 获取作品列表（带作者名 + 点赞数，支持排序与分页）
+     * @param {object} options
+     * @param {'newest'|'likes'|'foryou'} options.sort
+     * @param {number} options.limit
+     * @param {number} options.offset
      */
-    static async getList() {
+    static async getList({ sort = 'newest', limit = 20, offset = 0 } = {}) {
         const db = await getDb();
-        return await db.all(`
+
+        const orderBy = {
+            newest: 'w.created_at DESC',
+            likes: 'like_count DESC, w.created_at DESC',
+            foryou: `(COUNT(wl.user_id) +
+                CASE
+                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 3*86400*1000) THEN 10
+                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 7*86400*1000) THEN 5
+                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 30*86400*1000) THEN 2
+                    ELSE 0
+                END) DESC`,
+        }[sort] ?? 'w.created_at DESC';
+
+        const baseQuery = `
+            FROM works w
+            LEFT JOIN users u ON u.id = w.user_id
+            LEFT JOIN work_likes wl ON wl.work_id = w.id
+            GROUP BY w.id`;
+
+        const totalRow = await db.get(`SELECT COUNT(*) AS cnt FROM works`);
+        const total = totalRow?.cnt ?? 0;
+
+        const list = await db.all(`
             SELECT
                 w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
                 COALESCE(u.username, u.email) AS author,
                 u.email AS author_email,
                 COUNT(wl.user_id) AS like_count
-            FROM works w
-            LEFT JOIN users u ON u.id = w.user_id
-            LEFT JOIN work_likes wl ON wl.work_id = w.id
-            GROUP BY w.id
-            ORDER BY w.created_at DESC
-        `);
+            ${baseQuery}
+            ORDER BY ${orderBy}
+            LIMIT ? OFFSET ?
+        `, [limit, offset]);
+
+        return { list, total, hasMore: offset + list.length < total };
     }
 
     /**
