@@ -4,6 +4,7 @@ import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths } from '../controllers/GenerateController.js';
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
+import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment } from '../controllers/WorksController.js';
 
 const router = new Router();
 
@@ -50,5 +51,14 @@ router.post('/api/payment/create', AuthController.authenticate, createPayment);
 router.get('/api/payment/history', AuthController.authenticate, getPaymentHistory);
 router.get('/api/credits/balance', AuthController.authenticate, getCreditsBalance);
 router.get('/api/credits/transactions', AuthController.authenticate, getCreditsTransactions);
+
+// Works Routes - 广场作品
+router.get('/api/works', getWorksList);
+router.get('/api/works/:id', getWorkDetail);
+router.post('/api/works/upload', AuthController.authenticate, publishWorkUpload);
+router.post('/api/works', AuthController.authenticate, publishWork);
+router.post('/api/works/:id/like', AuthController.authenticate, likeWork);
+router.delete('/api/works/:id/like', AuthController.authenticate, unlikeWork);
+router.post('/api/works/:id/comments', AuthController.authenticate, addComment);
 
 export default router;

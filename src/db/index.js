@@ -114,6 +114,34 @@ export const getDb = async () => {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS works (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            prompt TEXT,
+            video_url TEXT NOT NULL,
+            cover_url TEXT,
+            source TEXT DEFAULT 'jimeng',
+            video_generation_id TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS work_likes (
+            work_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (work_id, user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS work_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            work_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
     `);
 
     // 数据库迁移：添加新字段
