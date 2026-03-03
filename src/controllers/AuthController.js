@@ -334,4 +334,19 @@ export class AuthController {
         }
     }
 
+    /**
+     * 可选 JWT 认证中间件（未登录也能继续，但登录后会解析 user）
+     */
+    static async optionalAuthenticate(ctx, next) {
+        const token = ctx.headers.authorization?.replace('Bearer ', '');
+        if (token) {
+            try {
+                ctx.state.user = jwt.verify(token, JWT_SECRET);
+            } catch {
+                // token 无效时忽略，不阻断请求
+            }
+        }
+        await next();
+    }
+
 }

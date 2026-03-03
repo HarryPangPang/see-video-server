@@ -23,8 +23,9 @@ export class WorksModel {
      * @param {'newest'|'likes'|'foryou'} options.sort
      * @param {number} options.limit
      * @param {number} options.offset
+     * @param {number|null} options.currentUserId - 当前登录用户 ID，用于包含自己的私密作品
      */
-    static async getList({ sort = 'newest', limit = 20, offset = 0 } = {}) {
+    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null } = {}) {
         const db = await getDb();
 
         const orderBy = {
@@ -39,27 +40,63 @@ export class WorksModel {
                 END) DESC`,
         }[sort] ?? 'w.created_at DESC';
 
+        // 登录用户可以看到自己的私密作品，其他作品只显示公开的
+        const privacyFilter = currentUserId
+            ? `(w.is_private = 0 OR w.user_id = ?)`
+            : `w.is_private = 0`;
+        const filterArgs = currentUserId ? [currentUserId] : [];
+
         const baseQuery = `
             FROM works w
             LEFT JOIN users u ON u.id = w.user_id
             LEFT JOIN work_likes wl ON wl.work_id = w.id
+            WHERE ${privacyFilter}
             GROUP BY w.id`;
 
-        const totalRow = await db.get(`SELECT COUNT(*) AS cnt FROM works`);
+        const totalRow = await db.get(
+            `SELECT COUNT(*) AS cnt FROM works w WHERE ${privacyFilter}`,
+            filterArgs
+        );
         const total = totalRow?.cnt ?? 0;
 
         const list = await db.all(`
             SELECT
                 w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
+                w.is_private,
                 COALESCE(u.username, u.email) AS author,
                 u.email AS author_email,
                 COUNT(wl.user_id) AS like_count
             ${baseQuery}
             ORDER BY ${orderBy}
             LIMIT ? OFFSET ?
-        `, [limit, offset]);
+        `, [...filterArgs, limit, offset]);
 
         return { list, total, hasMore: offset + list.length < total };
+    }
+
+    /**
+     * 删除作品（只有作者可以删除）
+     */
+    static async deleteWork(workId, userId) {
+        const db = await getDb();
+        const work = await db.get('SELECT id FROM works WHERE id = ? AND user_id = ?', [workId, userId]);
+        if (!work) return false;
+        await db.run('DELETE FROM work_likes WHERE work_id = ?', [workId]);
+        await db.run('DELETE FROM work_comments WHERE work_id = ?', [workId]);
+        await db.run('DELETE FROM works WHERE id = ?', [workId]);
+        return true;
+    }
+
+    /**
+     * 设置作品隐私状态（只有作者可以操作）
+     */
+    static async setPrivacy(workId, userId, isPrivate) {
+        const db = await getDb();
+        const result = await db.run(
+            'UPDATE works SET is_private = ? WHERE id = ? AND user_id = ?',
+            [isPrivate ? 1 : 0, workId, userId]
+        );
+        return result.changes > 0;
     }
 
     /**

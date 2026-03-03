@@ -17,7 +17,8 @@ export const getWorksList = async (ctx) => {
         const pageNum = Math.max(1, parseInt(page) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
         const offset = (pageNum - 1) * limitNum;
-        const result = await WorksModel.getList({ sort, limit: limitNum, offset });
+        const currentUserId = ctx.state.user?.id ?? null;
+        const result = await WorksModel.getList({ sort, limit: limitNum, offset, currentUserId });
         ctx.body = { success: true, data: result };
     } catch (err) {
         console.error('[Works] getList error:', err);
@@ -187,6 +188,57 @@ export const unlikeWork = async (ctx) => {
         const result = await WorksModel.unlike(id, userId);
         ctx.body = { success: true, data: result };
     } catch (err) {
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
+    }
+};
+
+/**
+ * DELETE /api/works/:id
+ * 删除自己的作品
+ */
+export const deleteWork = async (ctx) => {
+    const { id } = ctx.params;
+    const userId = ctx.state.user.id;
+    try {
+        const deleted = await WorksModel.deleteWork(id, userId);
+        if (!deleted) {
+            ctx.status = 404;
+            ctx.body = { success: false, message: '作品不存在或无权限' };
+            return;
+        }
+        ctx.body = { success: true };
+    } catch (err) {
+        console.error('[Works] delete error:', err);
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
+    }
+};
+
+/**
+ * PATCH /api/works/:id
+ * 更新作品隐私状态
+ * body: { isPrivate: boolean }
+ */
+export const updateWork = async (ctx) => {
+    const { id } = ctx.params;
+    const userId = ctx.state.user.id;
+    const { isPrivate } = ctx.request.body || {};
+    if (typeof isPrivate !== 'boolean') {
+        ctx.status = 400;
+        ctx.body = { success: false, message: '缺少 isPrivate 参数' };
+        return;
+    }
+    try {
+        const updated = await WorksModel.setPrivacy(id, userId, isPrivate);
+        if (!updated) {
+            ctx.status = 404;
+            ctx.body = { success: false, message: '作品不存在或无权限' };
+            return;
+        }
+        ctx.body = { success: true };
+    } catch (err) {
+        console.error('[Works] update error:', err);
         ctx.status = 500;
         ctx.body = { success: false, message: err.message };
     }
