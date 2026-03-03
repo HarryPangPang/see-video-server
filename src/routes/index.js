@@ -4,15 +4,7 @@ import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths } from '../controllers/GenerateController.js';
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
-import {
-    publishFromGeneration,
-    publishFromUpload,
-    listWorks,
-    getWorkById,
-    likeWork,
-    unlikeWork,
-    addComment,
-} from '../controllers/WorksController.js';
+import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork } from '../controllers/WorksController.js';
 
 const router = new Router();
 
@@ -60,11 +52,13 @@ router.get('/api/payment/history', AuthController.authenticate, getPaymentHistor
 router.get('/api/credits/balance', AuthController.authenticate, getCreditsBalance);
 router.get('/api/credits/transactions', AuthController.authenticate, getCreditsTransactions);
 
-// Works (Plaza) - 作品发布、广场、详情、点赞、评论
-router.post('/api/works', AuthController.authenticate, publishFromGeneration);
-router.post('/api/works/upload', AuthController.authenticate, publishFromUpload);
-router.get('/api/works', listWorks);
-router.get('/api/works/:id', AuthController.optionalAuthenticate, getWorkById);
+// Works Routes - 广场作品
+router.get('/api/works', AuthController.optionalAuthenticate, getWorksList);
+router.get('/api/works/:id', AuthController.optionalAuthenticate, getWorkDetail);
+router.post('/api/works/upload', AuthController.authenticate, publishWorkUpload);
+router.post('/api/works', AuthController.authenticate, publishWork);
+router.delete('/api/works/:id', AuthController.authenticate, deleteWork);
+router.patch('/api/works/:id', AuthController.authenticate, updateWork);
 router.post('/api/works/:id/like', AuthController.authenticate, likeWork);
 router.delete('/api/works/:id/like', AuthController.authenticate, unlikeWork);
 router.post('/api/works/:id/comments', AuthController.authenticate, addComment);

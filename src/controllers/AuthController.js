@@ -402,7 +402,7 @@ export class AuthController {
     }
 
     /**
-     * 可选认证：有 token 则解析并设置 ctx.state.user，无 token 也放行
+     * 可选 JWT 认证中间件（有 token 则解析并设置 ctx.state.user，无 token 也放行）
      */
     static async optionalAuthenticate(ctx, next) {
         const token = ctx.headers.authorization?.replace('Bearer ', '');

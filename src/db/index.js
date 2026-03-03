@@ -22,7 +22,7 @@ export const getDb = async () => {
     // Enable WAL mode for better concurrency
     await dbInstance.run('PRAGMA journal_mode = WAL');
 
-    
+
     await dbInstance.exec(`
 
         CREATE TABLE IF NOT EXISTS users (
@@ -100,7 +100,7 @@ export const getDb = async () => {
             updated_at INTEGER,
              create_snapshot TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
-           
+
         );
 
         CREATE TABLE IF NOT EXISTS credits_transactions (
@@ -114,27 +114,24 @@ export const getDb = async () => {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
-        CREATE TABLE IF NOT EXISTS published_works (
+        CREATE TABLE IF NOT EXISTS works (
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL,
             title TEXT NOT NULL,
             prompt TEXT,
-            video_url TEXT,
+            video_url TEXT NOT NULL,
             cover_url TEXT,
+            source TEXT DEFAULT 'jimeng',
             video_generation_id TEXT,
-            source TEXT NOT NULL DEFAULT 'generation',
             created_at INTEGER NOT NULL,
-            updated_at INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
         CREATE TABLE IF NOT EXISTS work_likes (
-            user_id INTEGER NOT NULL,
             work_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
-            PRIMARY KEY (user_id, work_id),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (work_id) REFERENCES published_works(id)
+            PRIMARY KEY (work_id, user_id)
         );
 
         CREATE TABLE IF NOT EXISTS work_comments (
@@ -142,9 +139,7 @@ export const getDb = async () => {
             work_id TEXT NOT NULL,
             user_id INTEGER NOT NULL,
             content TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            FOREIGN KEY (work_id) REFERENCES published_works(id),
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            created_at INTEGER NOT NULL
         );
 
     `);
@@ -157,6 +152,7 @@ export const getDb = async () => {
         { table: 'video_generations', column: 'refunded', type: 'INTEGER DEFAULT 0' },
         { table: 'video_generations', column: 'error_message', type: 'TEXT' },
         { table: 'video_generations', column: 'queue_info', type: 'TEXT' },
+        { table: 'works', column: 'is_private', type: 'INTEGER DEFAULT 0' },
         { table: 'users', column: 'google_id', type: 'TEXT' },
     ];
 
