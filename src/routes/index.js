@@ -12,7 +12,7 @@ const router = new Router();
 // Auth Routes - 注册和登录无需认证
 router.post('/api/auth/register', AuthController.register);
 router.post('/api/auth/login', AuthController.login);
-//
+router.post('/api/auth/google', AuthController.googleLogin);
 
 // Payment Webhook - LemonSqueezy 回调无需认证（有签名验证）
 router.post('/api/payment/webhook', webhookHandler);
@@ -54,7 +54,7 @@ router.get('/api/credits/transactions', AuthController.authenticate, getCreditsT
 
 // Works Routes - 广场作品
 router.get('/api/works', AuthController.optionalAuthenticate, getWorksList);
-router.get('/api/works/:id', getWorkDetail);
+router.get('/api/works/:id', AuthController.optionalAuthenticate, getWorkDetail);
 router.post('/api/works/upload', AuthController.authenticate, publishWorkUpload);
 router.post('/api/works', AuthController.authenticate, publishWork);
 router.delete('/api/works/:id', AuthController.authenticate, deleteWork);

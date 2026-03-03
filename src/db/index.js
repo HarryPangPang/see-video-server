@@ -22,7 +22,7 @@ export const getDb = async () => {
     // Enable WAL mode for better concurrency
     await dbInstance.run('PRAGMA journal_mode = WAL');
 
-    
+
     await dbInstance.exec(`
 
         CREATE TABLE IF NOT EXISTS users (
@@ -100,7 +100,7 @@ export const getDb = async () => {
             updated_at INTEGER,
              create_snapshot TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
-           
+
         );
 
         CREATE TABLE IF NOT EXISTS credits_transactions (
@@ -153,6 +153,7 @@ export const getDb = async () => {
         { table: 'video_generations', column: 'error_message', type: 'TEXT' },
         { table: 'video_generations', column: 'queue_info', type: 'TEXT' },
         { table: 'works', column: 'is_private', type: 'INTEGER DEFAULT 0' },
+        { table: 'users', column: 'google_id', type: 'TEXT' },
     ];
 
     for (const { table, column, type } of migrations) {

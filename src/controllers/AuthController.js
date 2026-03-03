@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import { UserModel, VerificationCodeModel } from '../models/UserModel.js';
 // import emailService from '../services/EmailService.js'; // 暂时禁用邮件服务
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 
 // JWT 密钥（生产环境应该使用环境变量）
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
@@ -160,6 +163,70 @@ export class AuthController {
             console.error('[AuthController] 注册失败:', error);
             ctx.status = 500;
             ctx.body = { success: false, message: error.message || '注册失败' };
+        }
+    }
+
+    /**
+     * Google 登录：用前端传来的 id_token 验证后创建/查找用户并返回 JWT
+     */
+    static async googleLogin(ctx) {
+        const { credential } = ctx.request.body || {};
+        if (!credential) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: '缺少 Google 凭证' };
+            return;
+        }
+        if (!GOOGLE_CLIENT_ID) {
+            ctx.status = 500;
+            ctx.body = { success: false, message: '服务端未配置 Google Client ID' };
+            return;
+        }
+        try {
+            const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+            const ticket = await client.verifyIdToken({
+                idToken: credential,
+                audience: GOOGLE_CLIENT_ID,
+            });
+            const payload = ticket.getPayload();
+            const { sub: googleId, email, name } = payload;
+            if (!email) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '无法获取 Google 邮箱信息' };
+                return;
+            }
+            let user = await UserModel.findByGoogleId(googleId);
+            if (!user) {
+                user = await UserModel.findByEmail(email);
+                if (user) {
+                    // 已有邮箱用户，绑定 google_id（需在 UserModel 支持 update google_id）
+                    const db = await (await import('../db/index.js')).getDb();
+                    await db.run('UPDATE users SET google_id = ?, updated_at = ? WHERE id = ?', [googleId, Date.now(), user.id]);
+                    user = await UserModel.findById(user.id);
+                } else {
+                    user = await UserModel.createFromGoogle(email, googleId, name || undefined);
+                }
+            }
+            const token = jwt.sign(
+                { id: user.id, email: user.email },
+                JWT_SECRET,
+                { expiresIn: JWT_EXPIRES_IN }
+            );
+            ctx.body = {
+                success: true,
+                message: '登录成功',
+                data: {
+                    token,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        username: user.username,
+                    },
+                },
+            };
+        } catch (error) {
+            console.error('[AuthController] Google 登录失败:', error);
+            ctx.status = 401;
+            ctx.body = { success: false, message: error.message || 'Google 登录验证失败' };
         }
     }
 
@@ -335,16 +402,19 @@ export class AuthController {
     }
 
     /**
-     * 可选 JWT 认证中间件（未登录也能继续，但登录后会解析 user）
+     * 可选 JWT 认证中间件（有 token 则解析并设置 ctx.state.user，无 token 也放行）
      */
     static async optionalAuthenticate(ctx, next) {
         const token = ctx.headers.authorization?.replace('Bearer ', '');
         if (token) {
             try {
-                ctx.state.user = jwt.verify(token, JWT_SECRET);
-            } catch {
-                // token 无效时忽略，不阻断请求
+                const decoded = jwt.verify(token, JWT_SECRET);
+                ctx.state.user = decoded;
+            } catch (_) {
+                ctx.state.user = null;
             }
+        } else {
+            ctx.state.user = null;
         }
         await next();
     }
