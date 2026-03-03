@@ -11,6 +11,7 @@ const router = new Router();
 // Auth Routes - 注册和登录无需认证
 router.post('/api/auth/register', AuthController.register);
 router.post('/api/auth/login', AuthController.login);
+//
 
 // Payment Webhook - LemonSqueezy 回调无需认证（有签名验证）
 router.post('/api/payment/webhook', webhookHandler);
