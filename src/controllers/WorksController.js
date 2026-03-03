@@ -90,9 +90,14 @@ export const publishWork = async (ctx) => {
             return;
         }
 
-        // 优先使用本地缓存路径，fallback 到远程 URL
-        const videoUrl = gen.video_local_path || gen.video_url;
-        const coverUrl = gen.cover_local_path || gen.cover_url || null;
+        // 将 FS 绝对路径转换为可访问的 URL 路径（与 GenerateController.getVideoList 保持一致）
+        // video_local_path 形如 /abs/path/.tmp/{generate_id}/video.mp4 → /assets/{generate_id}/video.mp4
+        const toAssetUrl = (fsPath) => {
+            if (!fsPath) return null;
+            return `/assets/${path.basename(path.dirname(fsPath))}/${path.basename(fsPath)}`;
+        };
+        const videoUrl = gen.video_local_path ? toAssetUrl(gen.video_local_path) : gen.video_url;
+        const coverUrl = gen.cover_local_path ? toAssetUrl(gen.cover_local_path) : (gen.cover_url || null);
 
         if (!videoUrl) {
             ctx.status = 400;
