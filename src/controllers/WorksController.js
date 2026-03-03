@@ -136,6 +136,7 @@ export const publishWorkUpload = async (ctx) => {
 
     const title = (Array.isArray(fields.title) ? fields.title[0] : fields.title)?.trim();
     const videoFile = Array.isArray(files.video) ? files.video[0] : files.video;
+    const coverFile = Array.isArray(files.cover) ? files.cover[0] : files.cover;
 
     if (!title || !videoFile) {
         ctx.status = 400;
@@ -154,12 +155,19 @@ export const publishWorkUpload = async (ctx) => {
 
         const videoUrl = `/assets/${uploadId}/video${ext}`;
 
+        let coverUrl = null;
+        if (coverFile) {
+            const coverDest = path.join(destDir, 'cover.jpg');
+            await fs.move(coverFile.filepath, coverDest);
+            coverUrl = `/assets/${uploadId}/cover.jpg`;
+        }
+
         const work = await WorksModel.create({
             userId,
             title,
             prompt: null,
             videoUrl,
-            coverUrl: null,
+            coverUrl,
             source: 'upload',
             videoGenerationId: null,
         });
