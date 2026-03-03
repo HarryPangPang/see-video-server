@@ -24,8 +24,10 @@ export class WorksModel {
      * @param {number} options.limit
      * @param {number} options.offset
      * @param {number|null} options.currentUserId - 当前登录用户 ID，用于包含自己的私密作品
+     * @param {boolean} options.mine - 只返回当前用户自己的作品（包括私密）
+     * @param {string|null} options.source - 按来源过滤（'jimeng' | 'upload'）
      */
-    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null } = {}) {
+    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null } = {}) {
         const db = await getDb();
 
         const orderBy = {
@@ -40,22 +42,33 @@ export class WorksModel {
                 END) DESC`,
         }[sort] ?? 'w.created_at DESC';
 
-        // 登录用户可以看到自己的私密作品，其他作品只显示公开的
-        const privacyFilter = currentUserId
-            ? `(w.is_private = 0 OR w.user_id = ?)`
-            : `w.is_private = 0`;
-        const filterArgs = currentUserId ? [currentUserId] : [];
+        const conditions = [];
+        const condArgs = [];
 
-        const baseQuery = `
-            FROM works w
-            LEFT JOIN users u ON u.id = w.user_id
-            LEFT JOIN work_likes wl ON wl.work_id = w.id
-            WHERE ${privacyFilter}
-            GROUP BY w.id`;
+        if (mine && currentUserId) {
+            // 只显示自己的作品，包括私密
+            conditions.push('w.user_id = ?');
+            condArgs.push(currentUserId);
+        } else {
+            // 公开广场：只显示公开作品，但登录用户可以看到自己的私密
+            if (currentUserId) {
+                conditions.push('(w.is_private = 0 OR w.user_id = ?)');
+                condArgs.push(currentUserId);
+            } else {
+                conditions.push('w.is_private = 0');
+            }
+        }
+
+        if (source) {
+            conditions.push('w.source = ?');
+            condArgs.push(source);
+        }
+
+        const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
         const totalRow = await db.get(
-            `SELECT COUNT(*) AS cnt FROM works w WHERE ${privacyFilter}`,
-            filterArgs
+            `SELECT COUNT(*) AS cnt FROM works w ${whereClause}`,
+            condArgs
         );
         const total = totalRow?.cnt ?? 0;
 
@@ -66,10 +79,14 @@ export class WorksModel {
                 COALESCE(u.username, u.email) AS author,
                 u.email AS author_email,
                 COUNT(wl.user_id) AS like_count
-            ${baseQuery}
+            FROM works w
+            LEFT JOIN users u ON u.id = w.user_id
+            LEFT JOIN work_likes wl ON wl.work_id = w.id
+            ${whereClause}
+            GROUP BY w.id
             ORDER BY ${orderBy}
             LIMIT ? OFFSET ?
-        `, [...filterArgs, limit, offset]);
+        `, [...condArgs, limit, offset]);
 
         return { list, total, hasMore: offset + list.length < total };
     }

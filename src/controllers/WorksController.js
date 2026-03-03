@@ -13,12 +13,16 @@ import { v4 as uuidv4 } from 'uuid';
  */
 export const getWorksList = async (ctx) => {
     try {
-        const { sort = 'newest', page = '1', limit = '20' } = ctx.query;
+        const { sort = 'newest', page = '1', limit = '20', mine, source } = ctx.query;
         const pageNum = Math.max(1, parseInt(page) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
         const offset = (pageNum - 1) * limitNum;
         const currentUserId = ctx.state.user?.id ?? null;
-        const result = await WorksModel.getList({ sort, limit: limitNum, offset, currentUserId });
+        const result = await WorksModel.getList({
+            sort, limit: limitNum, offset, currentUserId,
+            mine: mine === 'true',
+            source: source || null,
+        });
         ctx.body = { success: true, data: result };
     } catch (err) {
         console.error('[Works] getList error:', err);
