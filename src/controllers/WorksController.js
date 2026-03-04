@@ -135,6 +135,7 @@ export const publishWorkUpload = async (ctx) => {
     const [fields, files] = await form.parse(ctx.req);
 
     const title = (Array.isArray(fields.title) ? fields.title[0] : fields.title)?.trim();
+    const prompt = (Array.isArray(fields.prompt) ? fields.prompt[0] : fields.prompt)?.trim() || null;
     const videoFile = Array.isArray(files.video) ? files.video[0] : files.video;
     const coverFile = Array.isArray(files.cover) ? files.cover[0] : files.cover;
 
@@ -165,7 +166,7 @@ export const publishWorkUpload = async (ctx) => {
         const work = await WorksModel.create({
             userId,
             title,
-            prompt: null,
+            prompt,
             videoUrl,
             coverUrl,
             source: 'upload',
