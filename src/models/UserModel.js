@@ -11,6 +11,8 @@ export class UserModel {
     static async create(email, password, username = null) {
         const db = await getDb();
         const now = Date.now();
+        // 邮箱注册时若无昵称，默认用 @ 前部分
+        const displayName = (username && String(username).trim()) ? String(username).trim() : email.split('@')[0] || 'user';
 
         // 密码加密
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -19,13 +21,13 @@ export class UserModel {
             const result = await db.run(
                 `INSERT INTO users (email, password, username, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?)`,
-                [email, hashedPassword, username, now, now]
+                [email, hashedPassword, displayName, now, now]
             );
 
             return {
                 id: result.lastID,
                 email,
-                username,
+                username: displayName,
                 created_at: now,
             };
         } catch (error) {
@@ -59,18 +61,20 @@ export class UserModel {
     static async createFromGoogle(email, googleId, name = null) {
         const db = await getDb();
         const now = Date.now();
+        // 无 name 时默认昵称用邮箱 @ 前部分
+        const displayName = (name && String(name).trim()) ? String(name).trim() : (email.split('@')[0] || 'user');
         // 占位密码（Google 用户不会用密码登录）
         const hashedPassword = await bcrypt.hash('google-' + googleId + '-' + Math.random(), 10);
         try {
             const result = await db.run(
                 `INSERT INTO users (email, password, username, google_id, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?)`,
-                [email, hashedPassword, name || null, googleId, now, now]
+                [email, hashedPassword, displayName, googleId, now, now]
             );
             return {
                 id: result.lastID,
                 email,
-                username: name || null,
+                username: displayName,
                 google_id: googleId,
                 created_at: now,
             };
