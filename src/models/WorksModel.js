@@ -34,7 +34,7 @@ export class WorksModel {
      * @param {boolean} options.mine - 只返回当前用户自己的作品（包括私密）
      * @param {string|null} options.source - 按来源过滤（'jimeng' | 'upload'）
      */
-    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null } = {}) {
+    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null, isPrivate = null } = {}) {
         const db = await getDb();
 
         const conditions = [];
@@ -44,14 +44,11 @@ export class WorksModel {
             // 只显示自己的作品，包括私密
             conditions.push('w.user_id = ?');
             condArgs.push(currentUserId);
+            if (isPrivate === true) conditions.push('w.is_private = 1');
+            else if (isPrivate === false) conditions.push('w.is_private = 0');
         } else {
-            // 公开广场：只显示公开作品，但登录用户可以看到自己的私密
-            if (currentUserId) {
-                conditions.push('(w.is_private = 0 OR w.user_id = ?)');
-                condArgs.push(currentUserId);
-            } else {
-                conditions.push('w.is_private = 0');
-            }
+            // 公开广场：私密作品对所有人隐藏（包括作者自己）
+            conditions.push('w.is_private = 0');
         }
 
         if (source) {
