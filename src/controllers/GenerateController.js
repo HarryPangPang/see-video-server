@@ -4,7 +4,6 @@ import axios from 'axios';
 import fs from 'fs/promises';
 import fsSync from 'fs-extra';
 import path from 'path';
-import send from 'koa-send';
 import { CHROME_SERVICE_URL, PROJECT_ROOT, TMP_DIR } from '../config/constants.js';
 import { CreditsService } from '../services/CreditsService.js';
 
@@ -110,8 +109,8 @@ export const generate = async (ctx) => {
         const startSaved = startFrame ? await saveDataUrlToDir(imagesDir, startFrame, 'start') : null;
         const endSaved = endFrame ? await saveDataUrlToDir(imagesDir, endFrame, 'end') : null;
 
-        const startFrameUrl = startSaved ? `/api/generations/${projectId}/frame/start` : null;
-        const endFrameUrl = endSaved ? `/api/generations/${projectId}/frame/end` : null;
+        const startFrameUrl = startSaved ? `/assets/${projectId}/${startSaved}` : null;
+        const endFrameUrl = endSaved ? `/assets/${projectId}/${endSaved}` : null;
 
         // 处理全能参考模式的多张图片
         let omniFramePaths = null;
@@ -123,7 +122,7 @@ export const generate = async (ctx) => {
                 const saved = await saveDataUrlToDir(imagesDir, omniFrames[i], `omni-${i}`);
                 if (saved) {
                     omniFramePaths.push(path.join(imagesDir, saved));
-                    omniFrameUrls.push(`/api/generations/${projectId}/frame/omni-${i}`);
+                    omniFrameUrls.push(`/assets/${projectId}/${saved}`);
                 }
             }
         }
@@ -288,7 +287,11 @@ export const serveFrame = async (ctx) => {
         ctx.status = 404;
         return;
     }
-    await send(ctx, filename, { root: dir });
+    const filePath = path.join(dir, filename);
+    const ext = path.extname(filename).toLowerCase();
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+    ctx.type = mimeMap[ext] || 'application/octet-stream';
+    ctx.body = fsSync.createReadStream(filePath);
 };
 
 /**
@@ -376,6 +379,10 @@ export const getVideoList = async (ctx) => {
                 vg.model,
                 vg.ratio,
                 vg.duration,
+                vg.frame_mode,
+                vg.start_frame,
+                vg.end_frame,
+                vg.omni_frames,
                 vg.status,
                 vg.error_message,
                 vg.queue_info,
@@ -433,12 +440,26 @@ export const getVideoList = async (ctx) => {
                     queueInfo = null;
                 }
             }
+            // 解析 omni_frames（JSON 字符串 → 数组）
+            let omniFrames = null;
+            if (row.omni_frames) {
+                try {
+                    omniFrames = typeof row.omni_frames === 'string' ? JSON.parse(row.omni_frames) : row.omni_frames;
+                } catch {
+                    omniFrames = null;
+                }
+            }
+
             // 转换为类似即梦 API 返回的格式，以兼容前端
             return {
                 id: row.id,
                 duration: row.duration,
                 model: row.model,
                 ratio: row.ratio,
+                frame_mode: row.frame_mode || null,
+                start_frame: row.start_frame || null,
+                end_frame: row.end_frame || null,
+                omni_frames: omniFrames,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
                 video_local_path: localVideoUrl,
