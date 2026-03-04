@@ -2,7 +2,7 @@ import Router from 'koa-router';
 import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
-import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths } from '../controllers/GenerateController.js';
+import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths, deleteVideoGeneration } from '../controllers/GenerateController.js';
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
 import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork } from '../controllers/WorksController.js';
 
@@ -45,6 +45,7 @@ router.get('/api/video-list', AuthController.authenticate, getVideoList);
 // 视频生成资源管理：用于 Chrome 服务检查和保存视频本地路径
 router.post('/api/video-generations/check', checkVideoGeneration);
 router.post('/api/video-generations/update-paths', updateVideoPaths);
+router.delete('/api/video-generations/:id', AuthController.authenticate, deleteVideoGeneration);
 
 // Payment Routes - 支付和积分管理
 router.post('/api/payment/create', AuthController.authenticate, createPayment);
