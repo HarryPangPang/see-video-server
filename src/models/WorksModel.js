@@ -37,18 +37,6 @@ export class WorksModel {
     static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null } = {}) {
         const db = await getDb();
 
-        const orderBy = {
-            newest: 'w.created_at DESC',
-            likes: 'like_count DESC, w.created_at DESC',
-            foryou: `(COUNT(wl.user_id) +
-                CASE
-                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 3*86400*1000) THEN 10
-                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 7*86400*1000) THEN 5
-                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 30*86400*1000) THEN 2
-                    ELSE 0
-                END) DESC`,
-        }[sort] ?? 'w.created_at DESC';
-
         const conditions = [];
         const condArgs = [];
 
@@ -79,24 +67,73 @@ export class WorksModel {
         );
         const total = totalRow?.cnt ?? 0;
 
-        const rows = await db.all(`
-            SELECT
-                w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
-                w.is_private,
-                COALESCE(u.username, u.email) AS author,
-                u.email AS author_email,
-                COUNT(wl.user_id) AS like_count,
-                vg.video_local_path AS vg_video_path,
-                vg.cover_local_path AS vg_cover_path
-            FROM works w
-            LEFT JOIN users u ON u.id = w.user_id
-            LEFT JOIN work_likes wl ON wl.work_id = w.id
-            LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
-            ${whereClause}
-            GROUP BY w.id
-            ORDER BY ${orderBy}
-            LIMIT ? OFFSET ?
-        `, [...condArgs, limit, offset]);
+        let rows;
+
+        if (sort === 'foryou') {
+            // 热门候选池 + 随机打散
+            // 数据量充足（>= 40）时，先取热度 top 60 作为候选池，再随机取 limit 条
+            // 数据量不足时，直接对全部数据随机，保证展示不为空
+            const POOL_THRESHOLD = 40;
+            const POOL_SIZE = 60;
+            const innerLimit = total >= POOL_THRESHOLD ? POOL_SIZE : Math.max(total, 1);
+
+            const scoreExpr = `(COUNT(wl.user_id) +
+                CASE
+                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 3*86400*1000) THEN 10
+                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 7*86400*1000) THEN 5
+                    WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 30*86400*1000) THEN 2
+                    ELSE 0
+                END)`;
+
+            // 子查询先按热度排序取候选池，外层用 RANDOM() 打散
+            // 子查询的 LIMIT 已经把排序集缩小到最多 POOL_SIZE 行，外层 RANDOM() 开销极小
+            rows = await db.all(`
+                SELECT * FROM (
+                    SELECT
+                        w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
+                        w.is_private,
+                        COALESCE(u.username, u.email) AS author,
+                        u.email AS author_email,
+                        COUNT(wl.user_id) AS like_count,
+                        vg.video_local_path AS vg_video_path,
+                        vg.cover_local_path AS vg_cover_path
+                    FROM works w
+                    LEFT JOIN users u ON u.id = w.user_id
+                    LEFT JOIN work_likes wl ON wl.work_id = w.id
+                    LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
+                    ${whereClause}
+                    GROUP BY w.id
+                    ORDER BY ${scoreExpr} DESC
+                    LIMIT ?
+                )
+                ORDER BY RANDOM()
+                LIMIT ?
+            `, [...condArgs, innerLimit, limit]);
+        } else {
+            const orderBy = {
+                newest: 'w.created_at DESC',
+                likes: 'like_count DESC, w.created_at DESC',
+            }[sort] ?? 'w.created_at DESC';
+
+            rows = await db.all(`
+                SELECT
+                    w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
+                    w.is_private,
+                    COALESCE(u.username, u.email) AS author,
+                    u.email AS author_email,
+                    COUNT(wl.user_id) AS like_count,
+                    vg.video_local_path AS vg_video_path,
+                    vg.cover_local_path AS vg_cover_path
+                FROM works w
+                LEFT JOIN users u ON u.id = w.user_id
+                LEFT JOIN work_likes wl ON wl.work_id = w.id
+                LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
+                ${whereClause}
+                GROUP BY w.id
+                ORDER BY ${orderBy}
+                LIMIT ? OFFSET ?
+            `, [...condArgs, limit, offset]);
+        }
 
         const list = rows.map(row => ({
             id: row.id,
@@ -113,7 +150,7 @@ export class WorksModel {
             like_count: row.like_count,
         }));
 
-        return { list, total, hasMore: offset + list.length < total };
+        return { list, total, hasMore: sort !== 'foryou' && offset + list.length < total };
     }
 
     /**

@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs-extra';
 import path from 'path';
 import send from 'koa-send';
-import { CHROME_SERVICE_URL, PROJECT_ROOT } from '../config/constants.js';
+import { CHROME_SERVICE_URL, PROJECT_ROOT, TMP_DIR } from '../config/constants.js';
 import { CreditsService } from '../services/CreditsService.js';
 
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
@@ -365,25 +365,28 @@ export const getVideoList = async (ctx) => {
         // 只查询当前用户的视频记录，不展示 user_id 为 null 的给所有用户
         const rows = await db.all(
             `SELECT
-                id,
-                generate_id,
-                video_url,
-                video_local_path,
-                video_thumbnail,
-                cover_local_path,
-                video_duration,
-                prompt,
-                model,
-                ratio,
-                duration,
-                status,
-                error_message,
-                queue_info,
-                created_at,
-                updated_at
-            FROM video_generations
-            WHERE user_id = ?
-            ORDER BY created_at DESC`,
+                vg.id,
+                vg.generate_id,
+                vg.video_url,
+                vg.video_local_path,
+                vg.video_thumbnail,
+                vg.cover_local_path,
+                vg.video_duration,
+                vg.prompt,
+                vg.model,
+                vg.ratio,
+                vg.duration,
+                vg.status,
+                vg.error_message,
+                vg.queue_info,
+                vg.created_at,
+                vg.updated_at,
+                w.id AS work_id,
+                w.is_private AS work_is_private
+            FROM video_generations vg
+            LEFT JOIN works w ON w.video_generation_id = vg.id
+            WHERE vg.user_id = ?
+            ORDER BY vg.created_at DESC`,
             [userId]
         );
 
@@ -443,7 +446,9 @@ export const getVideoList = async (ctx) => {
                 prompt: promptText,
                 generate_id: row.generate_id,
                 error_message: row.error_message || null,
-                queue_info: queueInfo
+                queue_info: queueInfo,
+                work_id: row.work_id || null,
+                work_is_private: row.work_is_private ?? null,
             };
         });
 
@@ -579,5 +584,41 @@ export const updateVideoPaths = async (ctx) => {
             success: false,
             message: err.message
         };
+    }
+};
+
+/**
+ * DELETE /api/video-generations/:id
+ * 删除一条生成记录（及关联的 work 和文件）
+ */
+export const deleteVideoGeneration = async (ctx) => {
+    const { id } = ctx.params;
+    const userId = ctx.state.user?.id;
+    if (!userId) {
+        ctx.status = 401;
+        ctx.body = { success: false, message: 'Unauthorized' };
+        return;
+    }
+    const db = await getDb();
+    const row = await db.get(
+        'SELECT id, generate_id FROM video_generations WHERE id = ? AND user_id = ?',
+        [id, userId]
+    );
+    if (!row) {
+        ctx.status = 404;
+        ctx.body = { success: false, message: '记录不存在或无权限' };
+        return;
+    }
+    try {
+        await db.run('DELETE FROM works WHERE video_generation_id = ?', [id]);
+        await db.run('DELETE FROM video_generations WHERE id = ?', [id]);
+        if (row.generate_id) {
+            await fsSync.remove(path.join(TMP_DIR, row.generate_id)).catch(() => {});
+        }
+        ctx.body = { success: true };
+    } catch (err) {
+        console.error('[deleteVideoGeneration] Error:', err);
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
     }
 };
