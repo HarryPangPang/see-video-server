@@ -5,6 +5,15 @@ import { UserModel, VerificationCodeModel } from '../models/UserModel.js';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 
+function toUserResponse(user) {
+    return {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        isGoogleUser: !!user.google_id,
+    };
+}
+
 // JWT 密钥（生产环境应该使用环境变量）
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -152,11 +161,7 @@ export class AuthController {
                 message: '注册成功',
                 data: {
                     token,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        username: user.username,
-                    }
+                    user: toUserResponse({ ...user, google_id: null }),
                 }
             };
         } catch (error) {
@@ -216,11 +221,7 @@ export class AuthController {
                 message: '登录成功',
                 data: {
                     token,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        username: user.username,
-                    },
+                    user: toUserResponse(user),
                 },
             };
         } catch (error) {
@@ -271,12 +272,8 @@ export class AuthController {
                 message: '登录成功',
                 data: {
                     token,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        username: user.username,
-                    }
-                }
+                    user: toUserResponse(user),
+                },
             };
         } catch (error) {
             console.error('[AuthController] 登录失败:', error);
@@ -362,17 +359,95 @@ export class AuthController {
 
             ctx.body = {
                 success: true,
-                data: {
-                    id: user.id,
-                    email: user.email,
-                    username: user.username,
-                    created_at: user.created_at,
-                }
+                data: toUserResponse(user),
             };
         } catch (error) {
             console.error('[AuthController] 获取用户信息失败:', error);
             ctx.status = 500;
             ctx.body = { success: false, message: '获取用户信息失败' };
+        }
+    }
+
+    /**
+     * 更新当前用户资料（昵称）
+     */
+    static async updateProfile(ctx) {
+        try {
+            const { username } = ctx.request.body || {};
+            const trimmed = typeof username === 'string' ? username.trim() : '';
+            if (!trimmed) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '昵称不能为空' };
+                return;
+            }
+            if (trimmed.length > 50) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '昵称最多50个字符' };
+                return;
+            }
+            const userId = ctx.state.user?.id;
+            if (!userId) {
+                ctx.status = 401;
+                ctx.body = { success: false, message: '未登录' };
+                return;
+            }
+            const user = await UserModel.update(userId, { username: trimmed });
+            ctx.body = {
+                success: true,
+                data: toUserResponse(user),
+            };
+        } catch (error) {
+            console.error('[AuthController] 更新资料失败:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || '更新资料失败' };
+        }
+    }
+
+    /**
+     * 修改密码（仅邮箱注册用户，Google 登录不支持）
+     */
+    static async updatePassword(ctx) {
+        try {
+            const userId = ctx.state.user?.id;
+            if (!userId) {
+                ctx.status = 401;
+                ctx.body = { success: false, message: '未登录' };
+                return;
+            }
+            const user = await UserModel.findById(userId);
+            if (!user) {
+                ctx.status = 404;
+                ctx.body = { success: false, message: '用户不存在' };
+                return;
+            }
+            if (user.google_id) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: 'Google 登录不支持修改密码' };
+                return;
+            }
+            const { currentPassword, newPassword } = ctx.request.body || {};
+            if (!currentPassword || !newPassword) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '请填写当前密码和新密码' };
+                return;
+            }
+            if (newPassword.length < 6) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '新密码至少6位' };
+                return;
+            }
+            const valid = await UserModel.verifyPassword(currentPassword, user.password);
+            if (!valid) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '当前密码错误' };
+                return;
+            }
+            await UserModel.update(userId, { password: newPassword });
+            ctx.body = { success: true, message: '密码已修改' };
+        } catch (error) {
+            console.error('[AuthController] 修改密码失败:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || '修改密码失败' };
         }
     }
 
