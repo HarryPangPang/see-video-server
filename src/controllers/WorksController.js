@@ -60,10 +60,23 @@ export const getWorkDetail = async (ctx) => {
  * body: { videoGenerationId, title }
  */
 export const publishWork = async (ctx) => {
-    const { videoGenerationId, title } = ctx.request.body || {};
     const userId = ctx.state.user.id;
 
-    if (!videoGenerationId || !title?.trim()) {
+    let videoGenerationId, title, coverFile = null;
+    const contentType = ctx.request.headers['content-type'] || '';
+    if (contentType.includes('multipart')) {
+        const form = formidable({ multiples: false, maxFileSize: 10 * 1024 * 1024 });
+        const [fields, files] = await form.parse(ctx.req);
+        videoGenerationId = Array.isArray(fields.videoGenerationId) ? fields.videoGenerationId[0] : fields.videoGenerationId;
+        title = (Array.isArray(fields.title) ? fields.title[0] : fields.title)?.trim();
+        coverFile = Array.isArray(files.cover) ? files.cover[0] : files.cover;
+    } else {
+        const body = ctx.request.body || {};
+        videoGenerationId = body.videoGenerationId;
+        title = body.title?.trim();
+    }
+
+    if (!videoGenerationId || !title) {
         ctx.status = 400;
         ctx.body = { success: false, message: '缺少 videoGenerationId 或 title' };
         return;
@@ -92,13 +105,12 @@ export const publishWork = async (ctx) => {
         }
 
         // 将 FS 绝对路径转换为可访问的 URL 路径（与 GenerateController.getVideoList 保持一致）
-        // video_local_path 形如 /abs/path/.tmp/{generate_id}/video.mp4 → /assets/{generate_id}/video.mp4
         const toAssetUrl = (fsPath) => {
             if (!fsPath) return null;
             return `/assets/${path.basename(path.dirname(fsPath))}/${path.basename(fsPath)}`;
         };
         const videoUrl = gen.video_local_path ? toAssetUrl(gen.video_local_path) : gen.video_url;
-        const coverUrl = gen.cover_local_path ? toAssetUrl(gen.cover_local_path) : (gen.cover_url || null);
+        let coverUrl = gen.cover_local_path ? toAssetUrl(gen.cover_local_path) : (gen.cover_url || null);
 
         if (!videoUrl) {
             ctx.status = 400;
@@ -106,9 +118,25 @@ export const publishWork = async (ctx) => {
             return;
         }
 
+        // 若用户上传了自定义封面，保存到该生成记录的目录下
+        if (coverFile) {
+            let destDir;
+            if (gen.cover_local_path) {
+                destDir = path.dirname(gen.cover_local_path);
+            } else if (gen.video_local_path) {
+                destDir = path.dirname(gen.video_local_path);
+            } else {
+                destDir = path.join(TMP_DIR, videoGenerationId);
+            }
+            await fs.ensureDir(destDir);
+            const coverDest = path.join(destDir, 'cover_custom.jpg');
+            await fs.move(coverFile.filepath, coverDest);
+            coverUrl = `/assets/${path.basename(destDir)}/cover_custom.jpg`;
+        }
+
         const work = await WorksModel.create({
             userId,
-            title: title.trim(),
+            title,
             prompt: gen.prompt ?? null,
             videoUrl,
             coverUrl,
