@@ -22,8 +22,10 @@ router.post('/api/payment/webhook', webhookHandler);
 // ==================== 受保护路由（需要认证） ====================
 // 所有以下路由都需要登录后才能访问
 
-// Auth Routes - 获取当前用户信息
+// Auth Routes - 获取当前用户信息、更新资料
 router.get('/api/auth/me', AuthController.authenticate, AuthController.getCurrentUser);
+router.patch('/api/user/profile', AuthController.authenticate, AuthController.updateProfile);
+router.patch('/api/user/password', AuthController.authenticate, AuthController.updatePassword);
 
 
 // App Routes - 应用源码存储
