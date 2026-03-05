@@ -34,7 +34,7 @@ export class WorksModel {
      * @param {boolean} options.mine - 只返回当前用户自己的作品（包括私密）
      * @param {string|null} options.source - 按来源过滤（'jimeng' | 'upload'）
      */
-    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null, isPrivate = null } = {}) {
+    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null, isPrivate = null, userId = null } = {}) {
         const db = await getDb();
 
         const conditions = [];
@@ -46,6 +46,11 @@ export class WorksModel {
             condArgs.push(currentUserId);
             if (isPrivate === true) conditions.push('w.is_private = 1');
             else if (isPrivate === false) conditions.push('w.is_private = 0');
+        } else if (userId) {
+            // 查看某个用户的公开作品
+            conditions.push('w.user_id = ?');
+            condArgs.push(userId);
+            conditions.push('w.is_private = 0');
         } else {
             // 公开广场：私密作品对所有人隐藏（包括作者自己）
             conditions.push('w.is_private = 0');
@@ -214,6 +219,23 @@ export class WorksModel {
             liked = !!likeRow;
         }
 
+        // 当前用户是否已关注作者
+        let is_following = false;
+        if (currentUserId && row.user_id !== currentUserId) {
+            const followRow = await db.get(
+                'SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?',
+                [currentUserId, row.user_id]
+            );
+            is_following = !!followRow;
+        }
+
+        // 作者的粉丝数
+        const followerRow = await db.get(
+            'SELECT COUNT(*) AS cnt FROM user_follows WHERE following_id = ?',
+            [row.user_id]
+        );
+        const follower_count = followerRow?.cnt ?? 0;
+
         // 评论列表
         const comments = await db.all(`
             SELECT wc.id, wc.content, wc.created_at, COALESCE(u.username, u.email) AS author
@@ -223,7 +245,7 @@ export class WorksModel {
             ORDER BY wc.created_at ASC
         `, [workId]);
 
-        return { ...work, liked, comments };
+        return { ...work, liked, is_following, follower_count, comments };
     }
 
     /**

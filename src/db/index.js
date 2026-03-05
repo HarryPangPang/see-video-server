@@ -142,6 +142,15 @@ export const getDb = async () => {
             created_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS user_follows (
+            follower_id INTEGER NOT NULL,
+            following_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (follower_id, following_id),
+            FOREIGN KEY (follower_id) REFERENCES users(id),
+            FOREIGN KEY (following_id) REFERENCES users(id)
+        );
+
     `);
 
     // 数据库迁移：添加新字段
