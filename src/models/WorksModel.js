@@ -37,6 +37,55 @@ export class WorksModel {
     static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null, isPrivate = null, userId = null } = {}) {
         const db = await getDb();
 
+        // ── Following feed: early return with its own query ──
+        if (sort === 'following') {
+            if (!currentUserId) return { list: [], total: 0, hasMore: false };
+
+            const totalRow = await db.get(`
+                SELECT COUNT(*) AS cnt
+                FROM works w
+                JOIN user_follows uf ON uf.following_id = w.user_id AND uf.follower_id = ?
+                WHERE w.is_private = 0
+            `, [currentUserId]);
+            const total = totalRow?.cnt ?? 0;
+
+            const rows = await db.all(`
+                SELECT
+                    w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
+                    w.is_private,
+                    COALESCE(u.username, u.email) AS author,
+                    u.email AS author_email,
+                    COUNT(wl.user_id) AS like_count,
+                    vg.video_local_path AS vg_video_path,
+                    vg.cover_local_path AS vg_cover_path
+                FROM works w
+                JOIN user_follows uf ON uf.following_id = w.user_id AND uf.follower_id = ?
+                LEFT JOIN users u ON u.id = w.user_id
+                LEFT JOIN work_likes wl ON wl.work_id = w.id
+                LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
+                WHERE w.is_private = 0
+                GROUP BY w.id
+                ORDER BY w.created_at DESC
+                LIMIT ? OFFSET ?
+            `, [currentUserId, limit, offset]);
+
+            const list = rows.map(row => ({
+                id: row.id,
+                user_id: row.user_id,
+                title: row.title,
+                prompt: row.prompt,
+                video_url: toAssetUrl(row.vg_video_path) ?? row.video_url,
+                cover_url: toAssetUrl(row.vg_cover_path) ?? row.cover_url ?? null,
+                source: row.source,
+                created_at: row.created_at,
+                is_private: row.is_private,
+                author: row.author,
+                author_email: row.author_email,
+                like_count: row.like_count,
+            }));
+            return { list, total, hasMore: offset + list.length < total };
+        }
+
         const conditions = [];
         const condArgs = [];
 
@@ -79,11 +128,16 @@ export class WorksModel {
             const POOL_SIZE = 60;
             const innerLimit = total >= POOL_THRESHOLD ? POOL_SIZE : Math.max(total, 1);
 
+            // 已关注的作者的作品额外加权，使其出现在候选池前列
             const scoreExpr = `(COUNT(wl.user_id) +
                 CASE
                     WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 3*86400*1000) THEN 10
                     WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 7*86400*1000) THEN 5
                     WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 30*86400*1000) THEN 2
+                    ELSE 0
+                END +
+                CASE
+                    WHEN EXISTS (SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = w.user_id) THEN 15
                     ELSE 0
                 END)`;
 
@@ -110,7 +164,7 @@ export class WorksModel {
                 )
                 ORDER BY RANDOM()
                 LIMIT ?
-            `, [...condArgs, innerLimit, limit]);
+            `, [...condArgs, currentUserId, innerLimit, limit]);
         } else {
             const orderBy = {
                 newest: 'w.created_at DESC',
