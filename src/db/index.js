@@ -175,6 +175,8 @@ export const getDb = async () => {
         { table: 'users', column: 'bio', type: 'TEXT' },
         { table: 'users', column: 'location', type: 'TEXT' },
         { table: 'users', column: 'website', type: 'TEXT' },
+        { table: 'users', column: 'invite_code', type: 'TEXT' },
+        { table: 'users', column: 'referred_by_id', type: 'INTEGER' },
     ];
 
     for (const { table, column, type } of migrations) {
@@ -186,6 +188,13 @@ export const getDb = async () => {
                 console.warn(`[DB] Migration warning for ${table}.${column}:`, err.message);
             }
         }
+    }
+
+    // SQLite 无法在 ALTER TABLE ADD COLUMN 时加 UNIQUE，单独建唯一索引
+    try {
+        await dbInstance.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code)');
+    } catch (err) {
+        if (!err.message.includes('already exists')) console.warn('[DB] invite_code index:', err.message);
     }
 
     return dbInstance;

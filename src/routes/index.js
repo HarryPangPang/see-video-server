@@ -6,6 +6,7 @@ import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPa
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
 import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork, hideWork, unhideWork, getMyLikes } from '../controllers/WorksController.js';
 import { followUser, unfollowUser, getFollowing, getMyStats, getUserProfile, getUserFollowers, getUserFollowing } from '../controllers/FollowController.js';
+import { getMyReferral, getTeam, getCommissions } from '../controllers/ReferralController.js';
 
 const router = new Router();
 
@@ -80,5 +81,10 @@ router.get('/api/users/:userId/followers', getUserFollowers);
 router.get('/api/users/:userId/following', getUserFollowing);
 router.post('/api/users/:userId/follow', AuthController.authenticate, followUser);
 router.delete('/api/users/:userId/follow', AuthController.authenticate, unfollowUser);
+
+// Referral - 邀请与分佣
+router.get('/api/referral/me', AuthController.authenticate, getMyReferral);
+router.get('/api/referral/team', AuthController.authenticate, getTeam);
+router.get('/api/referral/commissions', AuthController.authenticate, getCommissions);
 
 export default router;

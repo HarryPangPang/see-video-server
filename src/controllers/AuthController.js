@@ -115,7 +115,7 @@ export class AuthController {
      * 修改：不再需要验证码，直接使用邮箱+密码注册
      */
     static async register(ctx) {
-        const { email, password, username } = ctx.request.body;
+        const { email, password, username, invite_code: inviteCode } = ctx.request.body;
 
         // 验证必填字段
         if (!email || !password) {
@@ -148,8 +148,17 @@ export class AuthController {
             }
             */
 
+            // 解析邀请人（邀请码有效且不能是自己）
+            let referredById = null;
+            if (inviteCode && String(inviteCode).trim()) {
+                const referrer = await UserModel.findByInviteCode(inviteCode);
+                if (referrer) {
+                    referredById = referrer.id;
+                }
+            }
+
             // 创建用户
-            const user = await UserModel.create(email, password, username);
+            const user = await UserModel.create(email, password, username, referredById);
 
             // 生成 JWT token
             const token = jwt.sign(
@@ -183,7 +192,7 @@ export class AuthController {
      * Google 登录：用前端传来的 id_token 验证后创建/查找用户并返回 JWT
      */
     static async googleLogin(ctx) {
-        const { credential } = ctx.request.body || {};
+        const { credential, invite_code: inviteCode } = ctx.request.body || {};
         if (!credential) {
             ctx.status = 400;
             ctx.body = { success: false, message: '缺少 Google 凭证' };
@@ -211,12 +220,16 @@ export class AuthController {
             if (!user) {
                 user = await UserModel.findByEmail(email);
                 if (user) {
-                    // 已有邮箱用户，绑定 google_id（需在 UserModel 支持 update google_id）
                     const db = await (await import('../db/index.js')).getDb();
                     await db.run('UPDATE users SET google_id = ?, updated_at = ? WHERE id = ?', [googleId, Date.now(), user.id]);
                     user = await UserModel.findById(user.id);
                 } else {
-                    user = await UserModel.createFromGoogle(email, googleId, name || undefined);
+                    let referredById = null;
+                    if (inviteCode && String(inviteCode).trim()) {
+                        const referrer = await UserModel.findByInviteCode(inviteCode);
+                        if (referrer) referredById = referrer.id;
+                    }
+                    user = await UserModel.createFromGoogle(email, googleId, name || undefined, referredById);
                 }
             }
             const token = jwt.sign(

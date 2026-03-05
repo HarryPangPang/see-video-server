@@ -7,8 +7,12 @@ import { getDb } from '../db/index.js';
 export class UserModel {
     /**
      * 创建新用户
+     * @param {string} email
+     * @param {string} password
+     * @param {string} [username]
+     * @param {number} [referredById] - 邀请人用户 ID（通过邀请码解析得到）
      */
-    static async create(email, password, username = null) {
+    static async create(email, password, username = null, referredById = null) {
         const db = await getDb();
         const now = Date.now();
         // 邮箱注册时若无昵称，默认用 @ 前部分
@@ -17,11 +21,20 @@ export class UserModel {
         // 密码加密
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        const fields = ['email', 'password', 'username', 'created_at', 'updated_at'];
+        const placeholders = ['?', '?', '?', '?', '?'];
+        const values = [email, hashedPassword, displayName, now, now];
+
+        if (referredById != null) {
+            fields.push('referred_by_id');
+            placeholders.push('?');
+            values.push(referredById);
+        }
+
         try {
             const result = await db.run(
-                `INSERT INTO users (email, password, username, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?)`,
-                [email, hashedPassword, displayName, now, now]
+                `INSERT INTO users (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+                values
             );
 
             return {
@@ -29,6 +42,7 @@ export class UserModel {
                 email,
                 username: displayName,
                 created_at: now,
+                referred_by_id: referredById ?? undefined,
             };
         } catch (error) {
             if (error.message.includes('UNIQUE constraint failed')) {
@@ -57,19 +71,27 @@ export class UserModel {
 
     /**
      * 使用 Google 信息创建或获取用户（用于 Google 登录）
+     * @param {number} [referredById] - 邀请人用户 ID（新用户且带邀请码时传入）
      */
-    static async createFromGoogle(email, googleId, name = null) {
+    static async createFromGoogle(email, googleId, name = null, referredById = null) {
         const db = await getDb();
         const now = Date.now();
-        // 无 name 时默认昵称用邮箱 @ 前部分
         const displayName = (name && String(name).trim()) ? String(name).trim() : (email.split('@')[0] || 'user');
-        // 占位密码（Google 用户不会用密码登录）
         const hashedPassword = await bcrypt.hash('google-' + googleId + '-' + Math.random(), 10);
+
+        const fields = ['email', 'password', 'username', 'google_id', 'created_at', 'updated_at'];
+        const placeholders = ['?', '?', '?', '?', '?', '?'];
+        const values = [email, hashedPassword, displayName, googleId, now, now];
+        if (referredById != null) {
+            fields.push('referred_by_id');
+            placeholders.push('?');
+            values.push(referredById);
+        }
+
         try {
             const result = await db.run(
-                `INSERT INTO users (email, password, username, google_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [email, hashedPassword, displayName, googleId, now, now]
+                `INSERT INTO users (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+                values
             );
             return {
                 id: result.lastID,
@@ -77,10 +99,10 @@ export class UserModel {
                 username: displayName,
                 google_id: googleId,
                 created_at: now,
+                referred_by_id: referredById ?? undefined,
             };
         } catch (error) {
             if (error.message.includes('UNIQUE constraint failed')) {
-                // 可能是 email 或 google_id 已存在，尝试按 google_id 查找
                 const existing = await UserModel.findByGoogleId(googleId);
                 if (existing) return existing;
                 const byEmail = await UserModel.findByEmail(email);
@@ -96,6 +118,17 @@ export class UserModel {
     static async findById(id) {
         const db = await getDb();
         return await db.get('SELECT * FROM users WHERE id = ?', [id]);
+    }
+
+    /**
+     * 根据邀请码查找用户（用于注册时绑定上级）
+     */
+    static async findByInviteCode(inviteCode) {
+        if (!inviteCode || typeof inviteCode !== 'string') return null;
+        const code = String(inviteCode).trim().toUpperCase();
+        if (!code) return null;
+        const db = await getDb();
+        return await db.get('SELECT id, username FROM users WHERE invite_code = ?', [code]);
     }
 
     /**

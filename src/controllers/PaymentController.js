@@ -1,5 +1,6 @@
 import { getDb } from '../db/index.js';
 import { CreditsService } from '../services/CreditsService.js';
+import { distributeRechargeCommission } from '../services/ReferralService.js';
 import Stripe from 'stripe';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
@@ -217,6 +218,11 @@ async function fulfillOrder(metadata, event, eventRef) {
         orderId,
         `充值 ${payment.amount} 元`
     );
+
+    // 三级分佣：给该用户的一、二、三级上级发放推广积分
+    distributeRechargeCommission(payment.user_id, payment.credits, orderId).catch((err) => {
+        console.error('[Payment] 分佣失败', err);
+    });
 
     console.log(`[Payment] [${eventRef}] 订单 ${orderId} 处理成功，用户 ${payment.user_id} 获得 ${payment.credits} 积分`);
 }
