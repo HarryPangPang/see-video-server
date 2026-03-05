@@ -63,7 +63,10 @@ export async function getUplineChain(userId) {
  */
 export async function distributeRechargeCommission(buyerUserId, creditsAmount, orderId) {
     const chain = await getUplineChain(buyerUserId);
-    if (chain.length === 0) return;
+    if (chain.length === 0) {
+        console.log(`[Referral] 用户 ${buyerUserId} 无上级，不发放分佣`);
+        return;
+    }
 
     const rates = [COMMISSION_RATE_LEVEL1, COMMISSION_RATE_LEVEL2, COMMISSION_RATE_LEVEL3];
     const db = await getDb();
@@ -72,7 +75,9 @@ export async function distributeRechargeCommission(buyerUserId, creditsAmount, o
     for (let i = 0; i < chain.length; i++) {
         const { userId: uplineId, level } = chain[i];
         const rate = rates[i] ?? 0;
-        const commission = Math.floor(creditsAmount * rate);
+        let commission = Math.floor(creditsAmount * rate);
+        // 有比例且买家有充值时，至少发放 1 积分，避免小额充值（如 1 积分）分佣为 0
+        if (rate > 0 && creditsAmount >= 1 && commission < 1) commission = 1;
         if (commission <= 0) continue;
 
         try {
