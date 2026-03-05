@@ -106,6 +106,30 @@ app.use(async (ctx, next) => {
             };
 
             ctx.type = mimeTypes[ext] || 'application/octet-stream';
+
+            const stat = await fs.stat(filePath);
+            const fileSize = stat.size;
+            const rangeHeader = ctx.headers['range'];
+
+            ctx.set('Accept-Ranges', 'bytes');
+
+            if (rangeHeader) {
+                // 解析 Range: bytes=start-end
+                const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+                if (match) {
+                    const start = match[1] !== '' ? parseInt(match[1], 10) : 0;
+                    const end = match[2] !== '' ? parseInt(match[2], 10) : fileSize - 1;
+                    const chunkSize = end - start + 1;
+
+                    ctx.status = 206;
+                    ctx.set('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+                    ctx.set('Content-Length', String(chunkSize));
+                    ctx.body = fs.createReadStream(filePath, { start, end });
+                    return;
+                }
+            }
+
+            ctx.set('Content-Length', String(fileSize));
             ctx.body = fs.createReadStream(filePath);
             return;
         }
