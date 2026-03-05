@@ -293,6 +293,38 @@ export const updateWork = async (ctx) => {
 };
 
 /**
+ * POST /api/works/:id/hide
+ * 屏蔽作品（不感兴趣）
+ */
+export const hideWork = async (ctx) => {
+    const { id } = ctx.params;
+    const userId = ctx.state.user.id;
+    try {
+        await WorksModel.hideWork(id, userId);
+        ctx.body = { success: true };
+    } catch (err) {
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
+    }
+};
+
+/**
+ * DELETE /api/works/:id/hide
+ * 取消屏蔽作品
+ */
+export const unhideWork = async (ctx) => {
+    const { id } = ctx.params;
+    const userId = ctx.state.user.id;
+    try {
+        await WorksModel.unhideWork(id, userId);
+        ctx.body = { success: true };
+    } catch (err) {
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
+    }
+};
+
+/**
  * POST /api/works/:id/comments
  * body: { content }
  */

@@ -4,7 +4,7 @@ import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths, deleteVideoGeneration } from '../controllers/GenerateController.js';
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
-import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork } from '../controllers/WorksController.js';
+import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork, hideWork, unhideWork } from '../controllers/WorksController.js';
 import { followUser, unfollowUser, getFollowing, getMyStats, getUserProfile, getUserFollowers, getUserFollowing } from '../controllers/FollowController.js';
 
 const router = new Router();
@@ -65,6 +65,8 @@ router.delete('/api/works/:id', AuthController.authenticate, deleteWork);
 router.patch('/api/works/:id', AuthController.authenticate, updateWork);
 router.post('/api/works/:id/like', AuthController.authenticate, likeWork);
 router.delete('/api/works/:id/like', AuthController.authenticate, unlikeWork);
+router.post('/api/works/:id/hide', AuthController.authenticate, hideWork);
+router.delete('/api/works/:id/hide', AuthController.authenticate, unhideWork);
 router.post('/api/works/:id/comments', AuthController.authenticate, addComment);
 
 // Follow & Profile Routes

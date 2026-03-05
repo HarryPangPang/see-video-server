@@ -151,6 +151,14 @@ export const getDb = async () => {
             FOREIGN KEY (following_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS user_hidden (
+            user_id INTEGER NOT NULL,
+            work_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, work_id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
     `);
 
     // 数据库迁移：添加新字段

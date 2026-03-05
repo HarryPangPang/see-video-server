@@ -46,7 +46,8 @@ export class WorksModel {
                 FROM works w
                 JOIN user_follows uf ON uf.following_id = w.user_id AND uf.follower_id = ?
                 WHERE w.is_private = 0
-            `, [currentUserId]);
+                  AND w.id NOT IN (SELECT work_id FROM user_hidden WHERE user_id = ?)
+            `, [currentUserId, currentUserId]);
             const total = totalRow?.cnt ?? 0;
 
             const rows = await db.all(`
@@ -64,10 +65,11 @@ export class WorksModel {
                 LEFT JOIN work_likes wl ON wl.work_id = w.id
                 LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
                 WHERE w.is_private = 0
+                  AND w.id NOT IN (SELECT work_id FROM user_hidden WHERE user_id = ?)
                 GROUP BY w.id
                 ORDER BY w.created_at DESC
                 LIMIT ? OFFSET ?
-            `, [currentUserId, limit, offset]);
+            `, [currentUserId, currentUserId, limit, offset]);
 
             const list = rows.map(row => ({
                 id: row.id,
@@ -103,6 +105,11 @@ export class WorksModel {
         } else {
             // 公开广场：私密作品对所有人隐藏（包括作者自己）
             conditions.push('w.is_private = 0');
+            // 过滤当前用户屏蔽的作品
+            if (currentUserId) {
+                conditions.push('w.id NOT IN (SELECT work_id FROM user_hidden WHERE user_id = ?)');
+                condArgs.push(currentUserId);
+            }
         }
 
         if (source) {
@@ -347,6 +354,29 @@ export class WorksModel {
             created_at: now,
             author: user?.author ?? '',
         };
+    }
+
+    /**
+     * 屏蔽作品（不感兴趣）
+     */
+    static async hideWork(workId, userId) {
+        const db = await getDb();
+        try {
+            await db.run(
+                'INSERT INTO user_hidden (user_id, work_id, created_at) VALUES (?, ?, ?)',
+                [userId, workId, Date.now()]
+            );
+        } catch (err) {
+            if (!err.message.includes('UNIQUE constraint failed')) throw err;
+        }
+    }
+
+    /**
+     * 取消屏蔽作品
+     */
+    static async unhideWork(workId, userId) {
+        const db = await getDb();
+        await db.run('DELETE FROM user_hidden WHERE user_id = ? AND work_id = ?', [userId, workId]);
     }
 
     /**
