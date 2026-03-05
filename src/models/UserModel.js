@@ -112,7 +112,7 @@ export class UserModel {
         const db = await getDb();
         const now = Date.now();
 
-        const allowedFields = ['username', 'password'];
+        const allowedFields = ['username', 'password', 'avatar', 'bio', 'location', 'website'];
         const fields = [];
         const values = [];
 

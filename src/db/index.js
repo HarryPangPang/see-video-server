@@ -171,6 +171,10 @@ export const getDb = async () => {
         { table: 'video_generations', column: 'queue_info', type: 'TEXT' },
         { table: 'works', column: 'is_private', type: 'INTEGER DEFAULT 0' },
         { table: 'users', column: 'google_id', type: 'TEXT' },
+        { table: 'users', column: 'avatar', type: 'TEXT' },
+        { table: 'users', column: 'bio', type: 'TEXT' },
+        { table: 'users', column: 'location', type: 'TEXT' },
+        { table: 'users', column: 'website', type: 'TEXT' },
     ];
 
     for (const { table, column, type } of migrations) {

@@ -26,6 +26,8 @@ router.post('/api/payment/webhook', webhookHandler);
 // Auth Routes - 获取当前用户信息、更新资料
 router.get('/api/auth/me', AuthController.authenticate, AuthController.getCurrentUser);
 router.patch('/api/user/profile', AuthController.authenticate, AuthController.updateProfile);
+router.post('/api/user/avatar', AuthController.authenticate, AuthController.uploadAvatar);
+router.delete('/api/user/avatar', AuthController.authenticate, AuthController.removeAvatar);
 router.patch('/api/user/password', AuthController.authenticate, AuthController.updatePassword);
 
 
