@@ -174,7 +174,7 @@ export class WorksModel {
                 )
                 ORDER BY RANDOM()
                 LIMIT ?
-            `, [...condArgs, currentUserId, currentUserId, innerLimit, limit]);
+            `, [currentUserId, ...condArgs, currentUserId, innerLimit, limit]);
         } else {
             const orderBy = {
                 newest: 'w.created_at DESC',
@@ -199,7 +199,7 @@ export class WorksModel {
                 GROUP BY w.id
                 ORDER BY ${orderBy}
                 LIMIT ? OFFSET ?
-            `, [...condArgs, currentUserId, limit, offset]);
+            `, [currentUserId, ...condArgs, limit, offset]);
         }
 
         const list = rows.map(row => ({
