@@ -212,6 +212,25 @@ export const publishWorkUpload = async (ctx) => {
 };
 
 /**
+ * GET /api/users/me/likes
+ */
+export const getMyLikes = async (ctx) => {
+    try {
+        const { page = '1', limit = '20' } = ctx.query;
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+        const offset = (pageNum - 1) * limitNum;
+        const userId = ctx.state.user.id;
+        const result = await WorksModel.getLikedByUser(userId, { limit: limitNum, offset });
+        ctx.body = { success: true, data: result };
+    } catch (err) {
+        console.error('[Works] getMyLikes error:', err);
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
+    }
+};
+
+/**
  * POST /api/works/:id/like
  */
 export const likeWork = async (ctx) => {

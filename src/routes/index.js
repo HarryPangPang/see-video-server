@@ -4,7 +4,7 @@ import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths, deleteVideoGeneration } from '../controllers/GenerateController.js';
 import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
-import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork, hideWork, unhideWork } from '../controllers/WorksController.js';
+import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork, hideWork, unhideWork, getMyLikes } from '../controllers/WorksController.js';
 import { followUser, unfollowUser, getFollowing, getMyStats, getUserProfile, getUserFollowers, getUserFollowing } from '../controllers/FollowController.js';
 
 const router = new Router();
@@ -72,6 +72,7 @@ router.post('/api/works/:id/comments', AuthController.authenticate, addComment);
 // Follow & Profile Routes
 router.get('/api/users/following', AuthController.authenticate, getFollowing);
 router.get('/api/users/me/stats', AuthController.authenticate, getMyStats);
+router.get('/api/users/me/likes', AuthController.authenticate, getMyLikes);
 router.get('/api/users/:userId/profile', AuthController.optionalAuthenticate, getUserProfile);
 router.get('/api/users/:userId/followers', getUserFollowers);
 router.get('/api/users/:userId/following', getUserFollowing);

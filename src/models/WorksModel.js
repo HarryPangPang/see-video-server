@@ -58,7 +58,8 @@ export class WorksModel {
                     u.email AS author_email,
                     COUNT(wl.user_id) AS like_count,
                     vg.video_local_path AS vg_video_path,
-                    vg.cover_local_path AS vg_cover_path
+                    vg.cover_local_path AS vg_cover_path,
+                    EXISTS (SELECT 1 FROM work_likes ul WHERE ul.work_id = w.id AND ul.user_id = ?) AS user_liked
                 FROM works w
                 JOIN user_follows uf ON uf.following_id = w.user_id AND uf.follower_id = ?
                 LEFT JOIN users u ON u.id = w.user_id
@@ -69,7 +70,7 @@ export class WorksModel {
                 GROUP BY w.id
                 ORDER BY w.created_at DESC
                 LIMIT ? OFFSET ?
-            `, [currentUserId, currentUserId, limit, offset]);
+            `, [currentUserId, currentUserId, currentUserId, limit, offset]);
 
             const list = rows.map(row => ({
                 id: row.id,
@@ -84,6 +85,7 @@ export class WorksModel {
                 author: row.author,
                 author_email: row.author_email,
                 like_count: row.like_count,
+                liked: !!row.user_liked,
             }));
             return { list, total, hasMore: offset + list.length < total };
         }
@@ -159,7 +161,8 @@ export class WorksModel {
                         u.email AS author_email,
                         COUNT(wl.user_id) AS like_count,
                         vg.video_local_path AS vg_video_path,
-                        vg.cover_local_path AS vg_cover_path
+                        vg.cover_local_path AS vg_cover_path,
+                        EXISTS (SELECT 1 FROM work_likes ul WHERE ul.work_id = w.id AND ul.user_id = ?) AS user_liked
                     FROM works w
                     LEFT JOIN users u ON u.id = w.user_id
                     LEFT JOIN work_likes wl ON wl.work_id = w.id
@@ -171,7 +174,7 @@ export class WorksModel {
                 )
                 ORDER BY RANDOM()
                 LIMIT ?
-            `, [...condArgs, currentUserId, innerLimit, limit]);
+            `, [...condArgs, currentUserId, currentUserId, innerLimit, limit]);
         } else {
             const orderBy = {
                 newest: 'w.created_at DESC',
@@ -186,7 +189,8 @@ export class WorksModel {
                     u.email AS author_email,
                     COUNT(wl.user_id) AS like_count,
                     vg.video_local_path AS vg_video_path,
-                    vg.cover_local_path AS vg_cover_path
+                    vg.cover_local_path AS vg_cover_path,
+                    EXISTS (SELECT 1 FROM work_likes ul WHERE ul.work_id = w.id AND ul.user_id = ?) AS user_liked
                 FROM works w
                 LEFT JOIN users u ON u.id = w.user_id
                 LEFT JOIN work_likes wl ON wl.work_id = w.id
@@ -195,7 +199,7 @@ export class WorksModel {
                 GROUP BY w.id
                 ORDER BY ${orderBy}
                 LIMIT ? OFFSET ?
-            `, [...condArgs, limit, offset]);
+            `, [...condArgs, currentUserId, limit, offset]);
         }
 
         const list = rows.map(row => ({
@@ -211,6 +215,7 @@ export class WorksModel {
             author: row.author,
             author_email: row.author_email,
             like_count: row.like_count,
+            liked: !!row.user_liked,
         }));
 
         return { list, total, hasMore: sort !== 'foryou' && offset + list.length < total };
@@ -307,6 +312,57 @@ export class WorksModel {
         `, [workId]);
 
         return { ...work, liked, is_following, follower_count, comments };
+    }
+
+    /**
+     * 获取用户点赞的作品列表（按点赞时间倒序，分页）
+     */
+    static async getLikedByUser(userId, { limit = 20, offset = 0 } = {}) {
+        const db = await getDb();
+        const totalRow = await db.get(
+            'SELECT COUNT(*) AS cnt FROM work_likes wl JOIN works w ON w.id = wl.work_id WHERE wl.user_id = ? AND w.is_private = 0',
+            [userId]
+        );
+        const total = totalRow.cnt;
+
+        const rows = await db.all(`
+            SELECT
+                w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
+                w.is_private,
+                COALESCE(u.username, u.email) AS author,
+                u.email AS author_email,
+                COUNT(wl2.user_id) AS like_count,
+                vg.video_local_path AS vg_video_path,
+                vg.cover_local_path AS vg_cover_path,
+                wl.created_at AS liked_at
+            FROM work_likes wl
+            JOIN works w ON w.id = wl.work_id
+            LEFT JOIN users u ON u.id = w.user_id
+            LEFT JOIN work_likes wl2 ON wl2.work_id = w.id
+            LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
+            WHERE wl.user_id = ? AND w.is_private = 0
+            GROUP BY w.id, wl.created_at
+            ORDER BY wl.created_at DESC
+            LIMIT ? OFFSET ?
+        `, [userId, limit, offset]);
+
+        const list = rows.map(row => ({
+            id: row.id,
+            user_id: row.user_id,
+            title: row.title,
+            prompt: row.prompt,
+            video_url: toAssetUrl(row.vg_video_path) ?? row.video_url,
+            cover_url: toAssetUrl(row.vg_cover_path) ?? row.cover_url ?? null,
+            source: row.source,
+            created_at: row.created_at,
+            is_private: row.is_private,
+            author: row.author,
+            author_email: row.author_email,
+            like_count: row.like_count,
+            liked_at: row.liked_at,
+        }));
+
+        return { list, total, hasMore: offset + list.length < total };
     }
 
     /**
