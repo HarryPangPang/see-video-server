@@ -237,6 +237,10 @@ export const likeWork = async (ctx) => {
     const { id } = ctx.params;
     const userId = ctx.state.user.id;
     try {
+        const db = await getDb();
+        const work = await db.get('SELECT user_id FROM works WHERE id = ?', [id]);
+        if (!work) { ctx.status = 404; ctx.body = { success: false, message: 'Work not found' }; return; }
+        if (work.user_id === userId) { ctx.status = 400; ctx.body = { success: false, message: 'Cannot like your own work' }; return; }
         const result = await WorksModel.like(id, userId);
         ctx.body = { success: true, data: result };
     } catch (err) {
