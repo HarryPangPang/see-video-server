@@ -1,6 +1,10 @@
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
+import formidable from 'formidable';
+import path from 'path';
+import fs from 'fs-extra';
 import { UserModel, VerificationCodeModel } from '../models/UserModel.js';
+import { TMP_DIR } from '../config/constants.js';
 // import emailService from '../services/EmailService.js'; // 暂时禁用邮件服务
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -10,6 +14,10 @@ function toUserResponse(user) {
         id: user.id,
         email: user.email,
         username: user.username,
+        avatar: user.avatar || null,
+        bio: user.bio || null,
+        location: user.location || null,
+        website: user.website || null,
         isGoogleUser: !!user.google_id,
     };
 }
@@ -369,18 +377,18 @@ export class AuthController {
     }
 
     /**
-     * 更新当前用户资料（昵称）
+     * 更新当前用户资料（昵称、简介、所在地、个人主页）
      */
     static async updateProfile(ctx) {
         try {
-            const { username } = ctx.request.body || {};
-            const trimmed = typeof username === 'string' ? username.trim() : '';
-            if (!trimmed) {
+            const body = ctx.request.body || {};
+            const username = typeof body.username === 'string' ? body.username.trim() : '';
+            if (!username) {
                 ctx.status = 400;
                 ctx.body = { success: false, message: '昵称不能为空' };
                 return;
             }
-            if (trimmed.length > 50) {
+            if (username.length > 50) {
                 ctx.status = 400;
                 ctx.body = { success: false, message: '昵称最多50个字符' };
                 return;
@@ -391,7 +399,11 @@ export class AuthController {
                 ctx.body = { success: false, message: '未登录' };
                 return;
             }
-            const user = await UserModel.update(userId, { username: trimmed });
+            const updates = { username };
+            if (typeof body.bio === 'string') updates.bio = body.bio.trim().slice(0, 500) || null;
+            if (typeof body.location === 'string') updates.location = body.location.trim().slice(0, 200) || null;
+            if (typeof body.website === 'string') updates.website = body.website.trim().slice(0, 500) || null;
+            const user = await UserModel.update(userId, updates);
             ctx.body = {
                 success: true,
                 data: toUserResponse(user),
@@ -400,6 +412,103 @@ export class AuthController {
             console.error('[AuthController] 更新资料失败:', error);
             ctx.status = 500;
             ctx.body = { success: false, message: error.message || '更新资料失败' };
+        }
+    }
+
+    /**
+     * 上传头像
+     * POST /api/user/avatar  multipart: avatar (image file)
+     */
+    static async uploadAvatar(ctx) {
+        const userId = ctx.state.user?.id;
+        if (!userId) {
+            ctx.status = 401;
+            ctx.body = { success: false, message: '未登录' };
+            return;
+        }
+        const contentType = ctx.request.headers['content-type'] || '';
+        if (!contentType.includes('multipart')) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: '请使用 multipart/form-data 上传图片' };
+            return;
+        }
+        const form = formidable({ multiples: false, maxFileSize: 2 * 1024 * 1024 });
+        let file;
+        try {
+            const [fields, files] = await form.parse(ctx.req);
+            file = Array.isArray(files.avatar) ? files.avatar[0] : files.avatar;
+        } catch (err) {
+            if (err.message && err.message.includes('maxFileSize')) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: '头像大小不能超过 2MB' };
+                return;
+            }
+            throw err;
+        }
+        if (!file || !file.filepath) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: 'Please select an avatar image' };
+            return;
+        }
+        const ext = (path.extname(file.originalFilename || '') || '.jpg').toLowerCase();
+        const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+        if (!allowed.includes(ext)) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: 'only support JPG、PNG、WEBP ' };
+            return;
+        }
+        try {
+            const avatarsDir = path.join(TMP_DIR, 'avatars');
+            await fs.ensureDir(avatarsDir);
+            const baseName = `${userId}${ext}`;
+            const destPath = path.join(avatarsDir, baseName);
+            await fs.move(file.filepath, destPath, { overwrite: true });
+            const avatarUrl = `/assets/avatars/${baseName}`;
+            const user = await UserModel.update(userId, { avatar: avatarUrl });
+            ctx.body = { success: true, data: toUserResponse(user) };
+        } catch (error) {
+            console.error('[AuthController] 上传头像失败:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || 'Failed to upload avatar' };
+        }
+    }
+
+    /**
+     * 恢复默认头像（清除自定义头像）
+     * DELETE /api/user/avatar
+     */
+    static async removeAvatar(ctx) {
+        const userId = ctx.state.user?.id;
+        if (!userId) {
+            ctx.status = 401;
+            ctx.body = { success: false, message: '未登录' };
+            return;
+        }
+        try {
+            const user = await UserModel.findById(userId);
+            if (!user) {
+                ctx.status = 404;
+                ctx.body = { success: false, message: '用户不存在' };
+                return;
+            }
+            if (user.avatar) {
+                const avatarsDir = path.join(TMP_DIR, 'avatars');
+                const ext = path.extname(user.avatar) || '.jpg';
+                const baseName = `${userId}${ext}`;
+                const filePath = path.join(avatarsDir, baseName);
+                try {
+                    await fs.remove(filePath);
+                } catch (e) {
+                    if (e.code !== 'ENOENT') console.warn('[AuthController] removeAvatar: delete file failed', e.message);
+                }
+            }
+            await UserModel.update(userId, { avatar: null });
+            const updated = await UserModel.findById(userId);
+            ctx.body = { success: true, data: toUserResponse(updated) };
+        } catch (error) {
+            console.error('[AuthController] 恢复默认头像失败:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || '恢复默认头像失败' };
         }
     }
 
