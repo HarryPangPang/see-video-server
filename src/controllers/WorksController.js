@@ -231,6 +231,31 @@ export const getMyLikes = async (ctx) => {
 };
 
 /**
+ * GET /api/users/:userId/likes
+ * 公开查看某用户的点赞列表（仅当该用户开启了 likes_public）
+ */
+export const getUserLikes = async (ctx) => {
+    try {
+        const targetId = parseInt(ctx.params.userId);
+        if (!targetId) { ctx.status = 400; ctx.body = { success: false, message: 'Invalid user id' }; return; }
+        const db = await getDb();
+        const u = await db.get('SELECT likes_public FROM users WHERE id = ?', [targetId]);
+        if (!u) { ctx.status = 404; ctx.body = { success: false, message: 'User not found' }; return; }
+        if (!u.likes_public) { ctx.status = 403; ctx.body = { success: false, message: 'Likes are private' }; return; }
+        const { page = '1', limit = '20' } = ctx.query;
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+        const offset = (pageNum - 1) * limitNum;
+        const result = await WorksModel.getLikedByUser(targetId, { limit: limitNum, offset });
+        ctx.body = { success: true, data: result };
+    } catch (err) {
+        console.error('[Works] getUserLikes error:', err);
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
+    }
+};
+
+/**
  * POST /api/works/:id/like
  */
 export const likeWork = async (ctx) => {

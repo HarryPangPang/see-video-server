@@ -19,6 +19,7 @@ function toUserResponse(user) {
         location: user.location || null,
         website: user.website || null,
         isGoogleUser: !!user.google_id,
+        likes_public: user.likes_public ?? 0,
     };
 }
 
@@ -570,6 +571,29 @@ export class AuthController {
             console.error('[AuthController] 修改密码失败:', error);
             ctx.status = 500;
             ctx.body = { success: false, message: error.message || '修改密码失败' };
+        }
+    }
+
+    /**
+     * 更新 Likes 可见性（公开/私密）
+     * PATCH /api/user/likes-visibility
+     */
+    static async updateLikesVisibility(ctx) {
+        try {
+            const userId = ctx.state.user?.id;
+            if (!userId) {
+                ctx.status = 401;
+                ctx.body = { success: false, message: '未登录' };
+                return;
+            }
+            const body = ctx.request.body || {};
+            const likesPublic = body.likes_public ? 1 : 0;
+            const user = await UserModel.update(userId, { likes_public: likesPublic });
+            ctx.body = { success: true, data: toUserResponse(user) };
+        } catch (error) {
+            console.error('[AuthController] 更新 likes 可见性失败:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || 'Failed' };
         }
     }
 
