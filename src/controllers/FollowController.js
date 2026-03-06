@@ -90,7 +90,7 @@ export const getUserProfile = async (ctx) => {
     const currentUserId = ctx.state.user?.id ?? null;
     const db = await getDb();
 
-    const u = await db.get('SELECT id, COALESCE(username, email) AS name, avatar, bio, location, website FROM users WHERE id = ?', [targetId]);
+    const u = await db.get('SELECT id, COALESCE(username, email) AS name, avatar, bio, location, website, background FROM users WHERE id = ?', [targetId]);
     if (!u) { ctx.status = 404; ctx.body = { success: false, message: 'User not found' }; return; }
 
     const [followers, following, likes] = await Promise.all([
@@ -105,7 +105,7 @@ export const getUserProfile = async (ctx) => {
         is_following = !!row;
     }
 
-    ctx.body = { success: true, data: { id: u.id, name: u.name, avatar: u.avatar || null, bio: u.bio || null, location: u.location || null, website: u.website || null, followers: followers.cnt, following: following.cnt, likes_received: likes.cnt, is_following } };
+    ctx.body = { success: true, data: { id: u.id, name: u.name, avatar: u.avatar || null, bio: u.bio || null, location: u.location || null, website: u.website || null, background: u.background || null, followers: followers.cnt, following: following.cnt, likes_received: likes.cnt, is_following } };
 };
 
 /**

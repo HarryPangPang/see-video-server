@@ -190,6 +190,7 @@ export const getDb = async () => {
         { table: 'users', column: 'website', type: 'TEXT' },
         { table: 'users', column: 'invite_code', type: 'TEXT' },
         { table: 'users', column: 'referred_by_id', type: 'INTEGER' },
+        { table: 'users', column: 'background', type: 'TEXT' },
     ];
 
     for (const { table, column, type } of migrations) {
