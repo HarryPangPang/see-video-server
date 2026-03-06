@@ -30,6 +30,8 @@ router.get('/api/auth/me', AuthController.authenticate, AuthController.getCurren
 router.patch('/api/user/profile', AuthController.authenticate, AuthController.updateProfile);
 router.post('/api/user/avatar', AuthController.authenticate, AuthController.uploadAvatar);
 router.delete('/api/user/avatar', AuthController.authenticate, AuthController.removeAvatar);
+router.post('/api/user/background', AuthController.authenticate, AuthController.uploadBackground);
+router.delete('/api/user/background', AuthController.authenticate, AuthController.removeBackground);
 router.patch('/api/user/password', AuthController.authenticate, AuthController.updatePassword);
 
 

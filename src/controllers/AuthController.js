@@ -18,6 +18,7 @@ function toUserResponse(user) {
         bio: user.bio || null,
         location: user.location || null,
         website: user.website || null,
+        background: user.background || null,
         isGoogleUser: !!user.google_id,
         likes_public: user.likes_public ?? 0,
     };
@@ -417,6 +418,7 @@ export class AuthController {
             if (typeof body.bio === 'string') updates.bio = body.bio.trim().slice(0, 500) || null;
             if (typeof body.location === 'string') updates.location = body.location.trim().slice(0, 200) || null;
             if (typeof body.website === 'string') updates.website = body.website.trim().slice(0, 500) || null;
+            if (typeof body.background === 'string') updates.background = body.background.trim().slice(0, 200) || null;
             const user = await UserModel.update(userId, updates);
             ctx.body = {
                 success: true,
@@ -523,6 +525,103 @@ export class AuthController {
             console.error('[AuthController] 恢复默认头像失败:', error);
             ctx.status = 500;
             ctx.body = { success: false, message: error.message || '恢复默认头像失败' };
+        }
+    }
+
+    /**
+     * Upload custom background image
+     * POST /api/user/background  multipart: background (image file)
+     */
+    static async uploadBackground(ctx) {
+        const userId = ctx.state.user?.id;
+        if (!userId) {
+            ctx.status = 401;
+            ctx.body = { success: false, message: '未登录' };
+            return;
+        }
+        const contentType = ctx.request.headers['content-type'] || '';
+        if (!contentType.includes('multipart')) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: '请使用 multipart/form-data 上传图片' };
+            return;
+        }
+        const form = formidable({ multiples: false, maxFileSize: 5 * 1024 * 1024 });
+        let file;
+        try {
+            const [fields, files] = await form.parse(ctx.req);
+            file = Array.isArray(files.background) ? files.background[0] : files.background;
+        } catch (err) {
+            if (err.message && err.message.includes('maxFileSize')) {
+                ctx.status = 400;
+                ctx.body = { success: false, message: 'Background image must be under 5MB' };
+                return;
+            }
+            throw err;
+        }
+        if (!file || !file.filepath) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: 'Please select a background image' };
+            return;
+        }
+        const ext = (path.extname(file.originalFilename || '') || '.jpg').toLowerCase();
+        const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+        if (!allowed.includes(ext)) {
+            ctx.status = 400;
+            ctx.body = { success: false, message: 'Only JPG, PNG, WEBP supported' };
+            return;
+        }
+        try {
+            const bgDir = path.join(TMP_DIR, 'backgrounds');
+            await fs.ensureDir(bgDir);
+            const baseName = `${userId}${ext}`;
+            const destPath = path.join(bgDir, baseName);
+            await fs.move(file.filepath, destPath, { overwrite: true });
+            const bgUrl = `/assets/backgrounds/${baseName}`;
+            const user = await UserModel.update(userId, { background: bgUrl });
+            ctx.body = { success: true, data: toUserResponse(user) };
+        } catch (error) {
+            console.error('[AuthController] uploadBackground failed:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || 'Failed to upload background' };
+        }
+    }
+
+    /**
+     * Remove custom background (reset to default)
+     * DELETE /api/user/background
+     */
+    static async removeBackground(ctx) {
+        const userId = ctx.state.user?.id;
+        if (!userId) {
+            ctx.status = 401;
+            ctx.body = { success: false, message: '未登录' };
+            return;
+        }
+        try {
+            const user = await UserModel.findById(userId);
+            if (!user) {
+                ctx.status = 404;
+                ctx.body = { success: false, message: '用户不存在' };
+                return;
+            }
+            if (user.background && user.background.startsWith('/assets/backgrounds/')) {
+                const bgDir = path.join(TMP_DIR, 'backgrounds');
+                const ext = path.extname(user.background) || '.jpg';
+                const baseName = `${userId}${ext}`;
+                const filePath = path.join(bgDir, baseName);
+                try {
+                    await fs.remove(filePath);
+                } catch (e) {
+                    if (e.code !== 'ENOENT') console.warn('[AuthController] removeBackground: delete file failed', e.message);
+                }
+            }
+            await UserModel.update(userId, { background: null });
+            const updated = await UserModel.findById(userId);
+            ctx.body = { success: true, data: toUserResponse(updated) };
+        } catch (error) {
+            console.error('[AuthController] removeBackground failed:', error);
+            ctx.status = 500;
+            ctx.body = { success: false, message: error.message || 'Failed to remove background' };
         }
     }
 
