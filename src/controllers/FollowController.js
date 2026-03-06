@@ -20,6 +20,8 @@ export const followUser = async (ctx) => {
             'INSERT INTO user_follows (follower_id, following_id, created_at) VALUES (?, ?, ?)',
             [followerId, followingId, Date.now()]
         );
+        const { createNotification } = await import('../models/NotificationModel.js');
+        await createNotification(followingId, 'follow', followerId);
     } catch (err) {
         if (!err.message.includes('UNIQUE constraint failed')) throw err;
         // 已关注，忽略

@@ -159,6 +159,19 @@ export const getDb = async () => {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            actor_id INTEGER NOT NULL,
+            related_id TEXT,
+            extra TEXT,
+            read INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (actor_id) REFERENCES users(id)
+        );
+
     `);
 
     // 数据库迁移：添加新字段

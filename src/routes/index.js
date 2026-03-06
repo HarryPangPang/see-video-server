@@ -7,6 +7,7 @@ import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, ge
 import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork, hideWork, unhideWork, getMyLikes } from '../controllers/WorksController.js';
 import { followUser, unfollowUser, getFollowing, getMyStats, getUserProfile, getUserFollowers, getUserFollowing } from '../controllers/FollowController.js';
 import { getMyReferral, getTeam, getCommissions } from '../controllers/ReferralController.js';
+import { getList as getNotifications, getUnreadCount as getNotificationUnreadCount, markRead as markNotificationRead, markAllRead as markNotificationsAllRead } from '../controllers/NotificationController.js';
 
 const router = new Router();
 
@@ -86,5 +87,11 @@ router.delete('/api/users/:userId/follow', AuthController.authenticate, unfollow
 router.get('/api/referral/me', AuthController.authenticate, getMyReferral);
 router.get('/api/referral/team', AuthController.authenticate, getTeam);
 router.get('/api/referral/commissions', AuthController.authenticate, getCommissions);
+
+// Notifications - 消息通知（点赞/评论/关注）
+router.get('/api/notifications', AuthController.authenticate, getNotifications);
+router.get('/api/notifications/unread-count', AuthController.authenticate, getNotificationUnreadCount);
+router.patch('/api/notifications/read-all', AuthController.authenticate, markNotificationsAllRead);
+router.patch('/api/notifications/:id/read', AuthController.authenticate, markNotificationRead);
 
 export default router;

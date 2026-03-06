@@ -242,6 +242,8 @@ export const likeWork = async (ctx) => {
         if (!work) { ctx.status = 404; ctx.body = { success: false, message: 'Work not found' }; return; }
         if (work.user_id === userId) { ctx.status = 400; ctx.body = { success: false, message: 'Cannot like your own work' }; return; }
         const result = await WorksModel.like(id, userId);
+        const { createNotification } = await import('../models/NotificationModel.js');
+        await createNotification(work.user_id, 'like', userId, id);
         ctx.body = { success: true, data: result };
     } catch (err) {
         ctx.status = 500;
@@ -362,7 +364,13 @@ export const addComment = async (ctx) => {
         return;
     }
     try {
+        const db = await getDb();
+        const work = await db.get('SELECT user_id FROM works WHERE id = ?', [id]);
         const comment = await WorksModel.addComment(id, userId, content.trim());
+        if (work && work.user_id !== userId) {
+            const { createNotification } = await import('../models/NotificationModel.js');
+            await createNotification(work.user_id, 'comment', userId, id, content.trim().slice(0, 200));
+        }
         ctx.body = { success: true, data: comment };
     } catch (err) {
         ctx.status = 500;
