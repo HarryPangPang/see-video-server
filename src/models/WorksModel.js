@@ -2,6 +2,18 @@ import { getDb } from '../db/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 
+// 基于 seed 的确定性 Fisher-Yates 洗牌（LCG PRNG）
+function seededShuffle(arr, seed) {
+    const a = [...arr];
+    let s = seed >>> 0;
+    for (let i = a.length - 1; i > 0; i--) {
+        s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+        const j = s % (i + 1);
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
 // 将 FS 绝对路径转为可访问的 /assets/... URL 路径
 const toAssetUrl = (fsPath) => {
     if (!fsPath) return null;
@@ -34,7 +46,7 @@ export class WorksModel {
      * @param {boolean} options.mine - 只返回当前用户自己的作品（包括私密）
      * @param {string|null} options.source - 按来源过滤（'jimeng' | 'upload'）
      */
-    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null, isPrivate = null, userId = null } = {}) {
+    static async getList({ sort = 'newest', limit = 20, offset = 0, currentUserId = null, mine = false, source = null, isPrivate = null, userId = null, seed = null } = {}) {
         const db = await getDb();
 
         // ── Following feed: early return with its own query ──
@@ -130,14 +142,10 @@ export class WorksModel {
         let rows;
 
         if (sort === 'foryou') {
-            // 热门候选池 + 随机打散
-            // 数据量充足（>= 40）时，先取热度 top 60 作为候选池，再随机取 limit 条
-            // 数据量不足时，直接对全部数据随机，保证展示不为空
             const POOL_THRESHOLD = 40;
             const POOL_SIZE = 60;
             const innerLimit = total >= POOL_THRESHOLD ? POOL_SIZE : Math.max(total, 1);
 
-            // 已关注的作者的作品额外加权，使其出现在候选池前列
             const scoreExpr = `(COUNT(wl.user_id) +
                 CASE
                     WHEN w.created_at > (CAST(strftime('%s','now') AS INTEGER)*1000 - 3*86400*1000) THEN 10
@@ -150,31 +158,48 @@ export class WorksModel {
                     ELSE 0
                 END)`;
 
-            // 子查询先按热度排序取候选池，外层用 RANDOM() 打散
-            // 子查询的 LIMIT 已经把排序集缩小到最多 POOL_SIZE 行，外层 RANDOM() 开销极小
-            rows = await db.all(`
-                SELECT * FROM (
-                    SELECT
-                        w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
-                        w.is_private,
-                        COALESCE(u.username, u.email) AS author,
-                        u.email AS author_email,
-                        COUNT(wl.user_id) AS like_count,
-                        vg.video_local_path AS vg_video_path,
-                        vg.cover_local_path AS vg_cover_path,
-                        EXISTS (SELECT 1 FROM work_likes ul WHERE ul.work_id = w.id AND ul.user_id = ?) AS user_liked
-                    FROM works w
-                    LEFT JOIN users u ON u.id = w.user_id
-                    LEFT JOIN work_likes wl ON wl.work_id = w.id
-                    LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
-                    ${whereClause}
-                    GROUP BY w.id
-                    ORDER BY ${scoreExpr} DESC
-                    LIMIT ?
-                )
-                ORDER BY RANDOM()
+            // 取候选池（按热度排序），在 JS 侧用 seed 做确定性洗牌，支持稳定分页
+            const candidates = await db.all(`
+                SELECT
+                    w.id, w.user_id, w.title, w.prompt, w.video_url, w.cover_url, w.source, w.created_at,
+                    w.is_private,
+                    COALESCE(u.username, u.email) AS author,
+                    u.email AS author_email,
+                    COUNT(wl.user_id) AS like_count,
+                    vg.video_local_path AS vg_video_path,
+                    vg.cover_local_path AS vg_cover_path,
+                    EXISTS (SELECT 1 FROM work_likes ul WHERE ul.work_id = w.id AND ul.user_id = ?) AS user_liked
+                FROM works w
+                LEFT JOIN users u ON u.id = w.user_id
+                LEFT JOIN work_likes wl ON wl.work_id = w.id
+                LEFT JOIN video_generations vg ON vg.id = w.video_generation_id
+                ${whereClause}
+                GROUP BY w.id
+                ORDER BY ${scoreExpr} DESC
                 LIMIT ?
-            `, [currentUserId, ...condArgs, currentUserId, innerLimit, limit]);
+            `, [currentUserId, ...condArgs, currentUserId, innerLimit]);
+
+            const sessionSeed = seed ?? Math.floor(Math.random() * 0x7FFFFFFF);
+            const shuffled = seededShuffle(candidates, sessionSeed);
+            const pageItems = shuffled.slice(offset, offset + limit);
+
+            const list = pageItems.map(row => ({
+                id: row.id,
+                user_id: row.user_id,
+                title: row.title,
+                prompt: row.prompt,
+                video_url: toAssetUrl(row.vg_video_path) ?? row.video_url,
+                cover_url: toAssetUrl(row.vg_cover_path) ?? row.cover_url ?? null,
+                source: row.source,
+                created_at: row.created_at,
+                is_private: row.is_private,
+                author: row.author,
+                author_email: row.author_email,
+                like_count: row.like_count,
+                liked: !!row.user_liked,
+            }));
+
+            return { list, total: shuffled.length, hasMore: offset + pageItems.length < shuffled.length, seed: sessionSeed };
         } else {
             const orderBy = {
                 newest: 'w.created_at DESC',
