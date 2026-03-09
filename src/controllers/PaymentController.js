@@ -8,22 +8,16 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 const STRIPE_SUCCESS_URL = 'https://see.lightchaser.xyz/#/payment/success';
 const STRIPE_CANCEL_URL = 'https://see.lightchaser.xyz/#/payment/cancel';
 
-// Stripe Price ID 映射表（根据 amount 映射到对应的 Price ID）
-const PRICE_ID_MAP = {
-    // '-1': process.env.STRIPE_PRICE_ID_TEST || '',   // 测试免费支付（已注释）
-    1: process.env.STRIPE_PRICE_ID_1 || '',
-    10: process.env.STRIPE_PRICE_ID_10 || '',
-    30: process.env.STRIPE_PRICE_ID_30 || '',
-    50: process.env.STRIPE_PRICE_ID_50 || '',
-};
-
-// 价格映射表：1 USD = 1 Credit
-const PRICE_MAP = {
-    // '-1': '-1',  // 测试免费支付（已注释）
-    1: 1,
-    10: 10,
-    30: 30,
-    50: 50,
+// 套餐配置：amount(USD) → { priceId, baseCredits, firstBonus, planId }
+// baseCredits: 正常购买获得的积分
+// firstBonus: 首次购买该档位额外赠送的积分（0 表示无赠送）
+const PLAN_CONFIG = {
+    1:   { priceId: process.env.STRIPE_PRICE_ID_1   || '', baseCredits: 1,   firstBonus: 0,  planId: 'plan_1'   },
+    5:   { priceId: process.env.STRIPE_PRICE_ID_5   || '', baseCredits: 6,   firstBonus: 2,  planId: 'plan_5'   },
+    10:  { priceId: process.env.STRIPE_PRICE_ID_10  || '', baseCredits: 13,  firstBonus: 4,  planId: 'plan_10'  },
+    30:  { priceId: process.env.STRIPE_PRICE_ID_30  || '', baseCredits: 45,  firstBonus: 10, planId: 'plan_30'  },
+    50:  { priceId: process.env.STRIPE_PRICE_ID_50  || '', baseCredits: 80,  firstBonus: 20, planId: 'plan_50'  },
+    100: { priceId: process.env.STRIPE_PRICE_ID_100 || '', baseCredits: 200, firstBonus: 50, planId: 'plan_100' },
 };
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
@@ -34,7 +28,7 @@ const stripe = new Stripe(STRIPE_SECRET_KEY);
  */
 export const createPayment = async (ctx) => {
     try {
-        const { amount, credits } = ctx.request.body || {};
+        const { amount } = ctx.request.body || {};
         const userId = ctx.state.user?.id;
         const userEmail = ctx.state.user?.email;
         if (!userId) {
@@ -43,77 +37,52 @@ export const createPayment = async (ctx) => {
             return;
         }
 
-        // 验证 credits 是否有效
-        if (!amount || !PRICE_ID_MAP[amount]) {
+        const plan = PLAN_CONFIG[amount];
+        if (!amount || !plan || !plan.priceId) {
             ctx.status = 400;
-            ctx.body = {
-                success: false,
-                message: `Invalid credits value`,
-            };
+            ctx.body = { success: false, message: `Invalid plan: $${amount}` };
             return;
         }
 
-        // 验证金额是否匹配积分（1 USD = 1 Credit）
-        const expectedAmount = PRICE_MAP[credits];
-        if (!expectedAmount || String(expectedAmount) !== String(amount)) {
-            ctx.status = 400;
-            ctx.body = {
-                success: false,
-                message: `Price mismatch: expected $${expectedAmount} for ${credits} credits, received $${amount}`,
-            };
-            return;
-        }
-
-        // 创建支付订单（使用 Stripe Checkout）
         const orderId = `order_${Date.now()}_${userId}`;
-        const actualCredits = String(credits);
-        // const actualCredits = String(amount) === '-1' ? '1' : String(credits);  // 测试免费支付（已注释）
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
-            line_items: [{
-                price: PRICE_ID_MAP[amount],
-                quantity: 1,
-            }],
+            line_items: [{ price: plan.priceId, quantity: 1 }],
             mode: 'payment',
             customer_email: userEmail,
             metadata: {
                 user_id: String(userId),
                 order_id: orderId,
-                credits: actualCredits,
+                credits: String(plan.baseCredits),
             },
             success_url: `${STRIPE_SUCCESS_URL}?order_id=${orderId}`,
             cancel_url: STRIPE_CANCEL_URL,
         });
 
-        const checkoutUrl = session.url;
-        console.log('[Payment] Created Stripe checkout session:', session.id, 'URL:', checkoutUrl);
+        console.log('[Payment] Created Stripe checkout session:', session.id, 'URL:', session.url);
 
-        // 保存订单记录
         const db = await getDb();
         const now = Date.now();
         await db.run(
             `INSERT INTO payments (user_id, order_id, amount, credits, status, created_at, updated_at, create_snapshot)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, orderId, amount, credits, 'pending', now, now, JSON.stringify({ sessionId: session.id })]
+            [userId, orderId, amount, plan.baseCredits, 'pending', now, now, JSON.stringify({ sessionId: session.id })]
         );
 
         ctx.body = {
             success: true,
             data: {
                 orderId,
-                checkoutUrl,
+                checkoutUrl: session.url,
                 amount,
-                credits
+                credits: plan.baseCredits,
             }
         };
     } catch (err) {
         console.error('[Payment] Create error:', err);
         ctx.status = 500;
-        ctx.body = {
-            success: false,
-            message: err.message
-        };
+        ctx.body = { success: false, message: err.message };
     }
 };
 
@@ -212,14 +181,38 @@ async function fulfillOrder(metadata, event, eventRef) {
         ['completed', JSON.stringify(event), now, orderId]
     );
 
+    // 发放基础积分
     await CreditsService.addCredits(
         payment.user_id,
         payment.credits,
         orderId,
-        `充值 ${payment.amount} 元`
+        `充值 $${payment.amount}`
     );
 
-    // 三级分佣：给该用户的一、二、三级上级发放推广积分
+    // 首次购买该档位：额外发放奖励积分
+    const plan = PLAN_CONFIG[payment.amount];
+    if (plan && plan.firstBonus > 0) {
+        const planId = plan.planId;
+        const existing = await db.get(
+            'SELECT 1 FROM purchase_plan_firsts WHERE user_id = ? AND plan_id = ?',
+            [payment.user_id, planId]
+        );
+        if (!existing) {
+            await db.run(
+                'INSERT INTO purchase_plan_firsts (user_id, plan_id, created_at) VALUES (?, ?, ?)',
+                [payment.user_id, planId, now]
+            );
+            await CreditsService.addCredits(
+                payment.user_id,
+                plan.firstBonus,
+                orderId,
+                `首次购买 $${payment.amount} 套餐奖励`
+            );
+            console.log(`[Payment] [${eventRef}] 用户 ${payment.user_id} 首次购买 ${planId}，额外赠送 ${plan.firstBonus} 积分`);
+        }
+    }
+
+    // 三级分佣
     distributeRechargeCommission(payment.user_id, payment.credits, orderId).catch((err) => {
         console.error('[Payment] 分佣失败', err);
     });
@@ -292,6 +285,36 @@ export const getCreditsBalance = async (ctx) => {
             success: false,
             message: err.message
         };
+    }
+};
+
+/**
+ * GET /api/payment/plan-status
+ * 返回用户已首次购买过的套餐 planId 列表，用于前端判断是否还能享受首购奖励
+ */
+export const getPlanPurchaseStatus = async (ctx) => {
+    try {
+        const userId = ctx.state.user?.id;
+        if (!userId) {
+            ctx.status = 401;
+            ctx.body = { success: false, message: 'Unauthorized' };
+            return;
+        }
+
+        const db = await getDb();
+        const rows = await db.all(
+            'SELECT plan_id FROM purchase_plan_firsts WHERE user_id = ?',
+            [userId]
+        );
+
+        ctx.body = {
+            success: true,
+            data: { purchasedPlans: rows.map(r => r.plan_id) },
+        };
+    } catch (err) {
+        console.error('[Payment] Get plan status error:', err);
+        ctx.status = 500;
+        ctx.body = { success: false, message: err.message };
     }
 };
 

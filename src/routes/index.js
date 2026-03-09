@@ -3,7 +3,7 @@ import { AppController } from '../controllers/AppController.js';
 import { AuthController } from '../controllers/AuthController.js';
 import { ProjectController } from '../controllers/ProjectController.js';
 import { generate, serveFrame, getVideoList, checkVideoGeneration, updateVideoPaths, deleteVideoGeneration } from '../controllers/GenerateController.js';
-import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions } from '../controllers/PaymentController.js';
+import { createPayment, webhookHandler, getPaymentHistory, getCreditsBalance, getCreditsTransactions, getPlanPurchaseStatus } from '../controllers/PaymentController.js';
 import { getWorksList, getWorkDetail, publishWork, publishWorkUpload, likeWork, unlikeWork, addComment, deleteWork, updateWork, hideWork, unhideWork, getMyLikes, getUserLikes } from '../controllers/WorksController.js';
 import { followUser, unfollowUser, getFollowing, getMyStats, getUserProfile, getUserFollowers, getUserFollowing } from '../controllers/FollowController.js';
 import { getMyReferral, getTeam, getCommissions } from '../controllers/ReferralController.js';
@@ -58,6 +58,7 @@ router.delete('/api/video-generations/:id', AuthController.authenticate, deleteV
 
 // Payment Routes - 支付和积分管理
 router.post('/api/payment/create', AuthController.authenticate, createPayment);
+router.get('/api/payment/plan-status', AuthController.authenticate, getPlanPurchaseStatus);
 router.get('/api/payment/history', AuthController.authenticate, getPaymentHistory);
 router.get('/api/credits/balance', AuthController.authenticate, getCreditsBalance);
 router.get('/api/credits/transactions', AuthController.authenticate, getCreditsTransactions);
